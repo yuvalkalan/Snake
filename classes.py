@@ -31,6 +31,7 @@ class Settings:
         self._food_color = None
         self._teleport = None
         self._has_change = None
+        self._last_volume = None
         self.reset()
         self._has_change = False
 
@@ -110,42 +111,76 @@ class Settings:
     def obstacle_speed(self):
         return BASE_OBSTACLE_SPEED * self.delta_size
 
+    @property
+    def pixel_ratio(self):
+        return self.block_size/DEFAULT_BLOCK_SIZE
+
+    @property
+    def last_volume(self):
+        return self._last_volume
+
+    def set_params(self, lst):
+        lst = iter(lst)
+        self._resolution = next(lst)
+        self._base_block_size = next(lst)
+        self._refresh_rate = next(lst)
+        self._base_text_size = next(lst)
+        self._head1_image = next(lst)
+        self._head2_image = next(lst)
+        self._body1_image = next(lst)
+        self._body2_image = next(lst)
+        self._bg_color = next(lst)
+        self._food_color = next(lst)
+        self._teleport = next(lst)
+        self._last_volume = next(lst)
+        self._has_change = True
+
+    def set_to_default(self):
+        self._resolution: int = 710
+        self._base_block_size: int = 29
+        self._refresh_rate: int = 30
+        self._base_text_size: int = 20
+        self._head1_image = self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
+        self._body1_image = self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
+        self._bg_color = BLACK
+        self._food_color = YELLOW
+        self._teleport = True
+        self._last_volume = 0
+        self._has_change = True
+
+    def rewrite(self):
+        try:
+            with open(SETTING_FILE, 'wb+') as my_file:
+                lst = [self._resolution,
+                       self._base_block_size,
+                       self._refresh_rate,
+                       self._base_text_size,
+                       self._head1_image,
+                       self._head2_image,
+                       self._body1_image,
+                       self._body2_image,
+                       self._bg_color,
+                       self._food_color,
+                       self._teleport,
+                       self._last_volume]
+                my_file.write(pickle.dumps(lst))
+        except Exception as e:
+            print(f'can not write settings! {type(e)} -> {e}')
+        self.reset()
+
     def reset(self):
         try:
             with open(SETTING_FILE, 'rb') as my_file:
-                content = iter(pickle.loads(my_file.read()))
-            self._resolution = next(content)
-            self._base_block_size = next(content)
-            self._refresh_rate = next(content)
-            self._base_text_size = next(content)
-            self._head1_image = next(content)
-            if self._head1_image is None:
-                self._head1_image = self._head1_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
-            self._head2_image = next(content)
-            if self._head2_image is None:
-                self._head2_image = self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
-            self._body1_image = next(content)
-            if self._body1_image is None:
-                self._body1_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
-            self._body2_image = next(content)
-            if self._body2_image is None:
-                self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
-            self._bg_color = next(content)
-            self._food_color = next(content)
-            self._teleport = next(content)
-        except (FileNotFoundError, ValueError, EOFError):
-            self._resolution: int = 710
-            self._base_block_size: int = 29
-            self._refresh_rate: int = 30
-            self._base_text_size: int = 20
-            self._head1_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
-            self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
-            self._body1_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
-            self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
-            self._bg_color = BLACK
-            self._food_color = YELLOW
-            self._teleport = True
-        self._has_change = True
+                content = pickle.loads(my_file.read())
+            self.set_params(content)
+        except Exception as e:
+            print(f'can not read settings! {type(e)} -> {e}')
+            self.set_to_default()
+
+    def write_volume(self, volume: float):
+        self.reset()
+        self._last_volume = volume
+        self.rewrite()
 
     @property
     def has_change(self):
@@ -153,20 +188,14 @@ class Settings:
         self._has_change = False
         return change
 
-    @property
-    def pixel_ratio(self):
-        return self.block_size/DEFAULT_BLOCK_SIZE
-
 
 class DataManager:
-    def __init__(self, screen: pygame.Surface):
+    def __init__(self):
         self._running = True
-        self._volume = VolumeBar(screen, 0)
-        self._volume.value = 0
-        pygame.mixer.music.set_volume(self._volume.value)
-        self._temp_msgs = TempMsgList(screen)
-        self._background_img = pygame.transform.scale(pygame.image.load(BACKGROUND_IMG), screen.get_size())
-        self._screen = screen
+        self._volume = None
+        self._temp_msgs = None
+        self._background_img = None
+        self._screen = None
 
     @property
     def running(self):
@@ -198,6 +227,15 @@ class DataManager:
 
     def empty(self):
         self._temp_msgs.empty()
+
+    def reset(self, screen):
+        self._running = True
+        self._volume = VolumeBar(screen, 0)
+        self._volume.value = settings.last_volume
+        pygame.mixer.music.set_volume(self._volume.value)
+        self._temp_msgs = TempMsgList(screen)
+        self._background_img = pygame.transform.scale(pygame.image.load(BACKGROUND_IMG), screen.get_size())
+        self._screen = screen
 
 
 class Message:
@@ -954,58 +992,6 @@ class ColorSelector(Message):
     @property
     def real_value(self):
         return self.color
-
-
-class PaintBar:
-    def __init__(self, pos):
-        self._rects = []
-        self._pos = pos
-        self._radius = settings.text_size // 2
-        self._pos_gen = next_pos(self._pos, (self._radius * 4, 0))
-        self._selected_color = COLORS[0]
-        self._size_index = 0
-        for color in COLORS:
-            self._rects.append((pygame.Rect(self.next_pos, (self._radius, self._radius)), color))
-
-    @property
-    def next_pos(self):
-        return next(self._pos_gen)
-
-    @property
-    def selected_color(self):
-        return self._selected_color
-
-    def is_touch_mouse(self):
-        mouse = pygame.mouse.get_pos()
-        mouse_rect = pygame.Rect(mouse, (1, 1))
-        for rect, color in self._rects:
-            if mouse_rect.colliderect(rect):
-                return rect, color
-        return None, None
-
-    def active(self, events):
-        for event in events:
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                rect, color = self.is_touch_mouse()
-                if rect:
-                    self._selected_color = color
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP:
-                    self._size_index = (self._size_index + 1) % 20
-                elif event.key == pygame.K_DOWN:
-                    self._size_index = (self._size_index - 1) % 20
-
-    @property
-    def mouse_rect(self):
-        rect_size = settings.pixel_ratio * (self._size_index + 1)
-        mouse_rect = pygame.Rect(pygame.mouse.get_pos() + (rect_size, rect_size))
-        mouse_rect.bottomright = pygame.mouse.get_pos()
-        return mouse_rect
-
-    def draw(self, screen):
-        for rect, color in self._rects:
-            pygame.draw.circle(screen, color, rect.center, self._radius)
-        pygame.draw.rect(screen, self.selected_color, self.mouse_rect)
 
 
 def distance(obj1, obj2) -> float:

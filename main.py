@@ -84,12 +84,88 @@ class ImageObject(GameObject):
             self._direction = direction
 
 
+class PaintColor(BlockObject):
+    def __init__(self, paint_bar, color):
+        super(PaintColor, self).__init__(paint_bar.next_pos, (paint_bar.radius, paint_bar.radius), color)
+
+    def draw(self, screen):
+        pygame.draw.circle(screen, self._color, self.rect.center, self._size[0])
+
+    @property
+    def color(self):
+        return self._color
+
+
+class PaintColorCustom(PaintColor):
+    def __init__(self, paint_bar):
+        super(PaintColorCustom, self).__init__(paint_bar, BLACK)
+        x, y = self._pos
+        self._r = ScaleBar((x + settings.text_size, y + settings.text_size))
+
+    def active(self, events):
+        pass
+
+
+class PaintBar:
+    def __init__(self, pos):
+        self._pos = pos
+        self._radius = settings.text_size // 2
+        self._pos_gen = next_pos(self._pos, (self._radius * 4, 0))
+        self._selected_color = BLACK
+        self._size_index = 0
+        self._custom_paint = PaintColorCustom(self)
+        self._paints = [PaintColor(self, color) for color in COLORS] + [self._custom_paint]
+
+    @property
+    def next_pos(self):
+        return next(self._pos_gen)
+
+    @property
+    def selected_color(self):
+        return self._selected_color
+
+    @property
+    def radius(self):
+        return self._radius
+
+    def is_touch_mouse(self):
+        for paint in self._paints:
+            if paint.is_touch_mouse():
+                return paint
+        return None
+
+    def active(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == MOUSE_LEFT:
+                    paint = self.is_touch_mouse()
+                    if paint:
+                        self._selected_color = paint.color
+                elif event.button == MOUSE_SCROLL_UP:
+                    self._size_index = (self._size_index + 1) % 20
+                elif event.button == MOUSE_SCROLL_DOWN:
+                    self._size_index = (self._size_index - 1) % 20
+
+    @property
+    def mouse_rect(self):
+        rect_size = settings.pixel_ratio * (self._size_index + 1)
+        mouse_rect = pygame.Rect(pygame.mouse.get_pos() + (rect_size, rect_size))
+        mouse_rect.bottomright = pygame.mouse.get_pos()
+        return mouse_rect
+
+    def draw(self, screen):
+        for paint in self._paints:
+            paint.draw(screen)
+        pygame.draw.rect(screen, self.selected_color, self.mouse_rect)
+
+
 class ImageEditor(ImageObject):
     def __init__(self, pos, image: pygame.Surface, paint_bar: PaintBar):
         super(ImageEditor, self).__init__(pos, image, color_key=None, resize=False)
         self._paint_bar = paint_bar
         w, h = self.size
         self.size = w * 2, h * 2
+        self._pressed = False
 
     def is_touch_mouse(self):
         x1, y1 = pygame.mouse.get_pos()
@@ -106,16 +182,16 @@ class ImageEditor(ImageObject):
     def active(self, events):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.is_touch_mouse():
+                if event.button == MOUSE_LEFT:
+                    if self.is_touch_mouse():
+                        pygame.draw.rect(self._image, self._paint_bar.selected_color, self.mouse_rect)
+                        self._pressed = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == MOUSE_LEFT:
+                    self._pressed = False
+            elif event.type == pygame.MOUSEMOTION:
+                if self._pressed:
                     pygame.draw.rect(self._image, self._paint_bar.selected_color, self.mouse_rect)
-            # elif event.type == pygame.KEYDOWN:
-            #     if event.key == pygame.K_b:
-            #         w, h = self.size
-            #         self.size = w*2, h*2
-            #     elif event.key == pygame.K_n:
-            #         w, h = self.size
-            #         self.size = w//2, h//2
-            #     print(self.size)
 
 
 # class GifObject(GameObject):
@@ -845,7 +921,7 @@ def draw_game(screen: pygame.Surface, data: DataManager, data_zone: DataZone):
     data_zone.draw(screen)
     data.draw(screen)
     pygame.display.flip()
-    clock.tick(settings.refresh_rate)
+    #clock.tick(settings.refresh_rate)
 
 
 def get_battle_line(screen: pygame.Surface):
@@ -1009,20 +1085,20 @@ def pick_gameplay(screen, data: DataManager):
         data.delete(screen)
 
 
-def submit_settings(conf_bars, conf_colors, teleport_button, image_obj: List[ImageObject]):
-    with open(SETTING_FILE, 'wb+') as my_file:
-        lst = [bar.real_value for bar in conf_bars]
-        if image_obj:
-            lst += [img.to_bytes() for img in image_obj]
-        else:
-            lst += [pygame.surfarray.array3d(settings.head1_image),
-                    pygame.surfarray.array3d(settings.head2_image),
-                    pygame.surfarray.array3d(settings.body1_image),
-                    pygame.surfarray.array3d(settings.body2_image)]
-        lst += [color.real_value for color in conf_colors]
-        lst += [teleport_button.real_value]
-        my_file.write(pickle.dumps(lst))
-    settings.reset()
+def submit_settings(data, conf_bars, conf_colors, teleport_button, image_obj: List[ImageObject]):
+    lst = [bar.real_value for bar in conf_bars]
+    if image_obj:
+        lst += [img.to_bytes() for img in image_obj]
+    else:
+        lst += [pygame.surfarray.array3d(settings.head1_image),
+                pygame.surfarray.array3d(settings.head2_image),
+                pygame.surfarray.array3d(settings.body1_image),
+                pygame.surfarray.array3d(settings.body2_image)]
+    lst += [color.real_value for color in conf_colors]
+    lst += [teleport_button.real_value]
+    lst += [data.volume.value]
+    settings.set_params(lst)
+    settings.rewrite()
     raise SettingsChanged
 
 
@@ -1037,6 +1113,7 @@ def check_settings(conf_bars, conf_colors, teleport_button, data):
 def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
     pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.block_size * 2.5))
     paint_bar = PaintBar(next(pos))
+    paint_selector = PaintSelector(paint_bar)
     x, y = next(pos)
     snake2_pos = next_pos((x + settings.block_size * 2.5, y), (0, settings.block_size * 2.5))
     image_editors = [ImageEditor((x, y), settings.head1_image, paint_bar),
@@ -1071,6 +1148,7 @@ def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
         for image in image_editors:
             image.draw(screen)
         paint_bar.draw(screen)
+        paint_selector.draw(screen)
         pygame.display.flip()
         clock.tick(LOBBY_REFRESH_RATE)
         data.delete(screen)
@@ -1109,7 +1187,7 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
                         teleport_button.change_mode()
                     elif submit_button.is_touch_mouse():
                         if check_settings(conf_bars, conf_colors, teleport_button, data):
-                            submit_settings(conf_bars, conf_colors, teleport_button, image_obj)
+                            submit_settings(data, conf_bars, conf_colors, teleport_button, image_obj)
                             raise SettingsChanged
                     elif reset_button.is_touch_mouse():
                         try:
@@ -1149,11 +1227,10 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
         data.delete(screen)
 
 
-def lobby():
+def lobby(data: DataManager):
     screen = pygame.display.set_mode(resolution())
     pygame.display.set_caption(WINDOW_TITLE)
-
-    data = DataManager(screen)
+    data.reset(screen)
 
     start_button = Button((screen.get_rect().centerx, settings.text_size * 5), 'start game!', RED,
                           'click here to start game!', settings.text_size * 2, data, CENTER)
@@ -1190,14 +1267,15 @@ def lobby():
 
 def main():
     pygame.init()
+    data = DataManager()
     try:
         while True:
             try:
-                lobby()
+                lobby(data)
             except SettingsChanged:
                 pass
     except QuitPressed:
-        pass
+        settings.write_volume(data.volume.value)
     pygame.quit()
 
 

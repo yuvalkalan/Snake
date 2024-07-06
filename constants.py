@@ -38,6 +38,7 @@ VOLUME_IMAGES: List[str] = [r'files\buttons\volume0.png', r'files\buttons\volume
 BACKGROUND_IMG = r'files\animation\lobby.png'
 HEAD_IMAGE = r'files\animation\head.png'
 BODY_IMAGE = r'files\animation\body.png'
+PAINT_SELECTOR_IMAGE = r'files\animation\paintSelector.png'
 
 ERROR_SOUND = r'files\sounds\error.ogg'
 BACKGROUND_SOUND = r'files\sounds\background.ogg'
