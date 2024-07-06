@@ -70,4 +70,4 @@ class Clicker(ImageObject):
             for y in range(h):
                 if img.get_at((x, y))[:-1] == src_color:
                     img.set_at((x, y), dst_color)
-        return Clicker(self._pos, self._image, 0, self._direction, self._color_key, self._position_at)
+        return Clicker(self._pos, img, 0, self._direction, self._color_key, self._position_at)
