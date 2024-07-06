@@ -1,4 +1,4 @@
-from constants import *
+from main import *
 import pygame
 import math
 
