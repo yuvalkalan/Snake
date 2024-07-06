@@ -97,6 +97,10 @@ class Settings:
     def teleport(self):
         return self._teleport
 
+    @property
+    def obstacle_speed(self):
+        return BASE_OBSTACLE_SPEED * self.delta_size
+
     def reset(self):
         try:
             with open(SETTING_FILE, 'rb') as my_file:

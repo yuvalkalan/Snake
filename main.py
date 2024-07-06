@@ -45,7 +45,7 @@ class Snake(BlockObject):
 
     def set_starter_pos(self, screen):
         x, y = screen.get_size()
-        x = x // (self._players + 1) * (self._index + 1)
+        x = x // (self._players + 1) * (self._players - self._index)
         y = y // 2
         self._pos = round_to_grid((x, y))
 
@@ -158,9 +158,7 @@ class Snake(BlockObject):
     def _check_food(self, food, screen):
         check = self.is_touch(food)
         if check:
-            food.delete(screen)
-            food.gen_pos(screen)
-            food.draw(screen)
+            food.replace(screen)
             self.add(1)
 
     def __len__(self):
@@ -193,9 +191,9 @@ class BattleSnake(Snake):
         if self._teleport:
             if x < 0:
                 x = self._boundary_line.left - settings.snake_speed
-            elif x > self._boundary_line.left - settings.snake_speed and self._index == 0:
+            elif x > self._boundary_line.left - settings.snake_speed and self._index == 1:
                 x = 0
-            elif x < self._boundary_line.right and self.index == 1:
+            elif x < self._boundary_line.right and self.index == 0:
                 x = self._max_x
             elif x > self._max_x:
                 x = self._boundary_line.right
@@ -204,6 +202,47 @@ class BattleSnake(Snake):
             elif y > self._max_y:
                 y = 0
         return x, y
+
+
+class SurvivalSnake(Snake):
+    def __init__(self, screen: pygame.Surface, index: int = 0, players: int = 2):
+        super(SurvivalSnake, self).__init__(screen, index, players)
+        self._timer = 0
+
+    def update(self, screen: pygame.Surface, food, data_zone):
+        dsq = super(SurvivalSnake, self).update(screen, food, data_zone)
+        self._timer += 1
+        if self._timer >= SURVIVAL_TIMER:
+            self.add(1)
+            self._timer -= SURVIVAL_TIMER
+        return dsq
+
+    def _check_food(self, food, screen):
+        check = self.is_touch(food)
+        if check:
+            food.replace(screen)
+            self._timer -= SURVIVAL_TIMER
+
+
+class SurvivalBattleSnake(BattleSnake):
+    def __init__(self, screen: pygame.Surface, boundary_line: pygame.Rect, index: int = 0, players: int = 2):
+        super(BattleSnake, self).__init__(screen, index, players)
+        self._boundary_line = boundary_line
+        self._timer = 0
+
+    def update(self, screen: pygame.Surface, food, data_zone):
+        dsq = super(SurvivalBattleSnake, self).update(screen, food, data_zone)
+        self._timer += 1
+        if self._timer >= SURVIVAL_TIMER:
+            self.add(1)
+            self._timer -= SURVIVAL_TIMER
+        return dsq
+
+    def _check_food(self, food, screen):
+        check = self.is_touch(food)
+        if check:
+            food.replace(screen)
+            self._timer -= SURVIVAL_TIMER
 
 
 class Food(BlockObject):
@@ -238,6 +277,11 @@ class Food(BlockObject):
         self.gen_pos(screen)
         self.draw(screen)
 
+    def replace(self, screen):
+        self.delete(screen)
+        self.gen_pos(screen)
+        self.draw(screen)
+
 
 class BattleFood(Food):
     def __init__(self, screen, boundary_line: pygame.Rect, index):
@@ -253,18 +297,86 @@ class BattleFood(Food):
         height = int(height - height * DATA_ZONE_SIZE - 1)
         last_pos = self._pos
         if self._index == 0:
-            w_rnd = random.randint(0, width // 2) * settings.snake_speed
-        else:
             w_rnd = random.randint(width // 2, width) * settings.snake_speed
+        else:
+            w_rnd = random.randint(0, width // 2) * settings.snake_speed
         h_rnd = random.randint(0, height) * settings.snake_speed
         self._pos = (w_rnd, h_rnd)
         while not self._pos_ok(screen, last_pos):
             if self._index == 0:
-                w_rnd = random.randint(0, width // 2) * settings.snake_speed
-            else:
                 w_rnd = random.randint(width // 2, width) * settings.snake_speed
+            else:
+                w_rnd = random.randint(0, width // 2) * settings.snake_speed
             h_rnd = random.randint(0, height) * settings.snake_speed
             self._pos = (w_rnd, h_rnd)
+
+
+class Obstacle(BlockObject):
+    def __init__(self, snake: Snake, data_zone: BlockObject, screen: pygame.Surface):
+        super(Obstacle, self).__init__((0, 0), (settings.block_size, settings.block_size), settings.body_color)
+        self._direction = 0
+        self._under_me = None
+        self._snake_pointer = snake
+        self._speed = settings.obstacle_speed
+        self.start(screen, data_zone)
+
+    def reset_pos(self, screen: pygame.Surface, data_zone):
+        num = random.randint(0, 3)
+        w = screen.get_rect().width - settings.block_size - 1
+        h = screen.get_rect().height - data_zone.rect.height - settings.block_size
+        if num == 0:
+            pos = (random.randint(0, w), 0)
+        elif num == 1:
+            pos = (w, random.randint(0, h))
+        elif num == 2:
+            pos = (random.randint(0, w), h)
+        else:
+            pos = (0, random.randint(0, h))
+        self._pos = pos
+
+    def start(self, screen: pygame.Surface, data_zone):
+        self.reset_pos(screen, data_zone)
+        while self._is_dead(screen, data_zone):
+            self.reset_pos(screen, data_zone)
+        self.redirect()
+
+    def redirect(self):
+        x, y = self._pos
+        snake_x, snake_y = self._snake_pointer.rect.center
+        self._direction = math.atan2(y - snake_y, x - snake_x)
+
+    def _is_dead(self, screen: pygame.Surface, data_zone):
+        head = self.rect
+        if self.is_touch(data_zone):
+            return True
+        top_left = head.topleft
+        top_right = head.topright
+        bottom_left = head.bottomleft
+        bottom_right = head.bottomright
+        try:
+            dsq = False
+            for color in [settings.body_color]:
+                dsq = dsq or color in [screen.get_at(top_left)[:-1], screen.get_at(top_right)[:-1],
+                                       screen.get_at(bottom_left)[:-1],
+                                       screen.get_at(bottom_right)[:-1]]
+            return dsq
+        except IndexError:
+            return True
+
+    def check_food(self, screen, food: Food):
+        if self.is_touch(food):
+            food.replace(screen)
+
+    def update(self, screen, food, data_zone):
+        self.delete(screen)
+        x, y = self._pos
+        x -= math.cos(self._direction) * self._speed
+        y -= math.sin(self._direction) * self._speed
+        self._pos = (x, y)
+        if self._is_dead(screen, data_zone):
+            self.start(screen, data_zone)
+        self.check_food(screen, food)
+        self.draw(screen)
 
 
 class Timer:
@@ -367,6 +479,10 @@ class DataZone(BlockObject):
     def timer(self):
         return self._timer.value
 
+    @property
+    def timer_str(self):
+        return str(self._timer)
+
 
 def round_to_grid(pos):
     x, y = pos
@@ -467,6 +583,49 @@ def snake_classic(screen, running, temp_msgs):
 
 
 def snake_obstacles(screen, running, temp_msgs):
+    screen.fill(settings.background_color)
+    snakes = [Snake(screen)]
+    food = Food(screen)
+    data_zone = DataZone(screen, snakes)
+    esc_pressed = False
+    while running:
+        temp_msgs.empty()
+        obstacle_counter = 0
+        obstacles = [Obstacle(snakes[0], data_zone, screen)]
+        while running:
+            events = pygame.event.get()
+            data_zone.handle_events(events)
+            for event in events:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_RIGHT, pygame.K_LEFT] and not data_zone.pause:
+                        snakes[0].set_direction(event.key)
+                    elif event.key == pygame.K_ESCAPE:
+                        esc_pressed = True
+            if esc_pressed:
+                break
+            if not data_zone.pause:
+                dsq = False
+                for snake in snakes:
+                    dsq = snake.update(screen, food, data_zone) or dsq
+                if dsq:
+                    break
+                for obstacle in obstacles:
+                    obstacle.update(screen, food, data_zone)
+            data_zone.draw(screen)
+            pygame.display.flip()
+            obstacle_counter += 1
+            if obstacle_counter >= 60:
+                obstacles.append(Obstacle(snakes[0], data_zone, screen))
+                obstacle_counter = 0
+            clock.tick(settings.refresh_rate)
+        if esc_pressed:
+            break
+        temp_msgs += TempMsg(f'total score: {sum([len(snake) for snake in snakes])}')
+        running, esc_pressed = reset_game(screen, running, snakes, [food], data_zone, temp_msgs)
+        if esc_pressed:
+            break
     return running
 
 
@@ -568,13 +727,106 @@ def snake_coop(screen: pygame.Surface, running, temp_msgs):
     return running
 
 
+def snake_survival(screen: pygame.Surface, running, temp_msgs):
+    screen.fill(settings.background_color)
+    snakes = [SurvivalSnake(screen)]
+    food = Food(screen)
+    data_zone = DataZone(screen, snakes)
+    esc_pressed = False
+    while running:
+        temp_msgs.empty()
+        while running:
+            events = pygame.event.get()
+            data_zone.handle_events(events)
+            for event in events:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_RIGHT, pygame.K_LEFT] and not data_zone.pause:
+                        snakes[0].set_direction(event.key)
+                    elif event.key == pygame.K_ESCAPE:
+                        esc_pressed = True
+            if esc_pressed:
+                break
+            if not data_zone.pause:
+                dsq = False
+                for snake in snakes:
+                    dsq = snake.update(screen, food, data_zone) or dsq
+                if dsq:
+                    break
+            data_zone.draw(screen)
+            pygame.display.flip()
+            clock.tick(settings.refresh_rate)
+        if esc_pressed:
+            break
+        temp_msgs += TempMsg(f'total time: {data_zone.timer_str}')
+        running, esc_pressed = reset_game(screen, running, snakes, [food], data_zone, temp_msgs)
+        if esc_pressed:
+            break
+    return running
+
+
+def snake_survival_battle(screen: pygame.Surface, running, temp_msgs):
+    screen.fill(settings.background_color)
+    width, height = screen_grids(screen)
+    x, y = round_to_grid(screen.get_rect().midtop)
+    line_start = (x if width % 2 == 1 else x - settings.block_size, y)
+    x, y = round_to_grid(screen.get_rect().midbottom)
+    line_size = (settings.block_size if width % 2 == 1 else settings.block_size*2, y)
+    line_rect = pygame.Rect(line_start + line_size)
+    snakes = [SurvivalBattleSnake(screen, line_rect, index, 2) for index in range(2)]
+    foods = [BattleFood(screen, line_rect, index) for index in range(2)]
+    data_zone = DataZone(screen, snakes)
+    esc_pressed = False
+    while running:
+        pygame.draw.rect(screen, settings.body_color, line_rect)
+        temp_msgs.empty()
+        while running:
+            events = pygame.event.get()
+            data_zone.handle_events(events)
+            for event in events:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_RIGHT, pygame.K_LEFT] and not data_zone.pause:
+                        snakes[0].set_direction(event.key)
+                    elif event.key in [pygame.K_w, pygame.K_s, pygame.K_d, pygame.K_a] and not data_zone.pause:
+                        snakes[1].set_direction(event.key)
+                    elif event.key == pygame.K_ESCAPE:
+                        esc_pressed = True
+                    elif event.key == pygame.K_z:
+                        for snake in snakes:
+                            snake.add(1)
+            if esc_pressed:
+                break
+            if not data_zone.pause:
+                dsq = False
+                for i, snake in enumerate(snakes):
+                    dsq = snake.update(screen, foods[i], data_zone) or dsq
+                if dsq:
+                    break
+            data_zone.draw(screen)
+            pygame.display.flip()
+            clock.tick(settings.refresh_rate)
+        if esc_pressed:
+            break
+        winner_index = 1 + max(snakes, key=lambda s: (not s.dsq, len(s))).index
+        temp_msgs += TempMsg(f'p{winner_index} win! total time: {data_zone.timer_str}')
+        running, esc_pressed = reset_game(screen, running, snakes, foods, data_zone, temp_msgs)
+        if esc_pressed:
+            break
+    return running
+
+
 def pick_gameplay(screen, running, background_img, temp_msgs):
     screen.blit(background_img, (0, 0))
     pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.text_size * 2))
     buttons = {Button(next(pos), 'classic', RED, 'one player, until disqualified', settings.text_size): snake_classic,
                Button(next(pos), 'obstacles', RED, 'one player, avoid obstacles', settings.text_size): snake_obstacles,
                Button(next(pos), 'battle', RED, 'two players against each other', settings.text_size): snake_battle,
-               Button(next(pos), 'cooperation', RED, 'two players, together', settings.text_size): snake_coop}
+               Button(next(pos), 'cooperation', RED, 'two players, together', settings.text_size): snake_coop,
+               Button(next(pos), 'survival', RED, 'eat food keep you small', settings.text_size): snake_survival,
+               Button(next(pos), 'survival battle', RED, '1v1 survival', settings.text_size): snake_survival_battle}
     esc_pressed = False
     while running:
         for event in pygame.event.get():
@@ -633,6 +885,7 @@ def edit_settings(screen, running, background_img, temp_msgs):
                    ColorSelector(next(pos), 'food color', settings.food_color, settings.text_size)]
     teleport_button = SelectionButton(next(pos), 'teleport', settings.teleport, settings.text_size)
     submit_button = Button(next(pos), 'submit!', YELLOW, 'click here to submit!', settings.text_size)
+    reset_button = Button(next(pos), 'reset', RED, 'reset to default', settings.text_size)
     while running:
         events = pygame.event.get()
         for bar in conf_bars:
@@ -651,6 +904,13 @@ def edit_settings(screen, running, background_img, temp_msgs):
                         if check_settings(conf_bars, conf_colors, teleport_button, temp_msgs):
                             submit_settings(conf_bars, conf_colors, teleport_button, temp_msgs)
                             esc_pressed = True
+                    elif reset_button.is_touch_mouse():
+                        try:
+                            os.remove(SETTING_FILE)
+                            settings.reset()
+                        except FileNotFoundError:
+                            pass
+                        esc_pressed = True
                     else:
                         for color in conf_colors:
                             if color.is_touch_mouse():
@@ -669,6 +929,7 @@ def edit_settings(screen, running, background_img, temp_msgs):
             color.draw(screen)
         teleport_button.draw(screen)
         submit_button.draw(screen)
+        reset_button.draw(screen)
         temp_msgs.draw(screen)
         pygame.display.flip()
         clock.tick(LOBBY_REFRESH_RATE)
@@ -683,6 +944,7 @@ def main():
     while reset and running:
         reset = False
         screen = pygame.display.set_mode(resolution())
+        print(screen_grids(screen))
         background_img = pygame.transform.scale(pygame.image.load(BACKGROUND_IMG), screen.get_size())
         pygame.display.set_caption(WINDOW_TITLE)
         start_button = Button((screen.get_rect().centerx, settings.text_size * 5), 'start game!', RED,

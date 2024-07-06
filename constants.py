@@ -74,3 +74,6 @@ P2_CVT_KEYS = {pygame.K_w: pygame.K_UP,
                pygame.K_a: pygame.K_LEFT}
 
 BATTLE_TIMER = 60
+SURVIVAL_TIMER = 20
+
+BASE_OBSTACLE_SPEED = 20
