@@ -48,5 +48,9 @@ def get_shift_status():
     return keyboard.is_pressed('shift')
 
 
+def get_ctrl_status():
+    return keyboard.is_pressed('ctrl')
+
+
 def big_letter():
     return get_shift_status() ^ get_caps_lock_status()

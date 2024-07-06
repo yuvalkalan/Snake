@@ -293,8 +293,10 @@ class InputBox(ScreenObject):
         x1, y1 = self._title.rect.topright
         x2, y2 = self.rect.bottomright
         self._box = pygame.Rect((x1, y1), (x2-x1, y2-y1))
-        self._string = ''
-        self._text = DataMessage(self._box.topleft, ' {}', settings.text_size, RED, value=self, func=lambda x: x.string)
+        self._full_string = ''
+        self._visual_string = ''
+        self._text = DataMessage(self._box.topleft, ' {}', settings.text_size, RED, value=self,
+                                 func=lambda x: x.string)
         self._is_active = False
         self._is_password = is_password
 
@@ -305,11 +307,11 @@ class InputBox(ScreenObject):
 
     @property
     def string(self):
-        return self._string if not self._is_password else '*' * len(self._string)
+        return self._visual_string if not self._is_password else '*' * len(self._visual_string)
 
     @property
     def value(self):
-        return self._string
+        return self._full_string
 
     @property
     def is_active(self):
@@ -321,7 +323,7 @@ class InputBox(ScreenObject):
         self._title.color = GREEN if value else RED
 
     def active(self, events):
-        last_string = self._string
+        last_string = self._full_string
         for event in events:
             # אם מקש כלשהו נלחץ
             if event.type == pygame.KEYDOWN:
@@ -330,28 +332,31 @@ class InputBox(ScreenObject):
                 if self._is_active:
                     # אם התו הוא התו למחוק, תמחק את התו האחרון ממני
                     if last_char == pygame.K_BACKSPACE:
-                        self._string = self._string[:-1]
+                        if get_ctrl_status():
+                            while self._full_string and self._full_string[-1] not in [' ', '.']:
+                                self._full_string = self._full_string[:-1]
+                        self._full_string = self._full_string[:-1]
                     # אם התו הוא רווח, תוסיף לי רווח
                     elif last_char == pygame.K_SPACE:
-                        self._string += ' '
+                        self._full_string += ' '
                     # אם התו הוא אות אלפבית, תוסיף אותה אליי כאות גדולה או כאות קטנה, תלוי אם שיפט למטה
                     elif ord('a') <= last_char <= ord('z'):
                         if big_letter():
-                            self._string += chr(last_char).upper()
+                            self._full_string += chr(last_char).upper()
                         else:
-                            self._string += chr(last_char).lower()
+                            self._full_string += chr(last_char).lower()
                     # אם התו הוא מספר, תוסיף אותו אליי כמספר או כתו מיוחד, תלוי אם שיפט למטה
                     elif ord('0') <= last_char <= ord('9'):
                         if get_shift_status():
-                            self._string += SHIFTED_NUMBERS[chr(last_char)]
+                            self._full_string += SHIFTED_NUMBERS[chr(last_char)]
                         else:
-                            self._string += chr(last_char)
+                            self._full_string += chr(last_char)
                     # אם התו הוא תו מיוחד אחר, תוסיף אותו אליי
                     elif last_char in SPECIAL_CHARS:
                         if get_shift_status():
-                            self._string += SHIFTED_SPECIAL_CHARS[last_char]
+                            self._full_string += SHIFTED_SPECIAL_CHARS[last_char]
                         else:
-                            self._string += SPECIAL_CHARS[last_char]
+                            self._full_string += SPECIAL_CHARS[last_char]
             # אם אני נלחץ על ידי העכבר
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if self.is_touch_mouse():
@@ -361,11 +366,12 @@ class InputBox(ScreenObject):
                     self._is_active = False
                     self._title.color = RED
             # אם היה שינוי בי, תקבע לי טקסט חדש
-            if last_string != self._string:
+            if last_string != self._full_string:
+                self._visual_string = self._full_string
                 self._text.update_text()
             # אם אני מלא, תמחק את התווים שממלאים את הרשימה
-            if self._text.rect.right >= self.rect.right:
-                self._string = self._string[:-1]
+            while self._text.rect.right >= self.rect.right:
+                self._visual_string = self._visual_string[1:]
                 self._text.update_text()
 
 

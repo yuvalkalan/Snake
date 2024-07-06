@@ -1,3 +1,4 @@
+import pygame.draw
 from font import *
 from .constants import *
 from queue import Queue
@@ -51,9 +52,15 @@ class SnakeEyes:
     def update(self, target):
         x, y = self._head.rect.midleft
         radius = (self._head.rect.centerx - x) // 2
-        self._left_eye.pos = (x + radius, y)
-        x, y = self._head.rect.midright
-        self._right_eye.pos = (x - radius, y)
+        if self._head.direction in [0, 180]:
+            self._left_eye.pos = (x + radius, y)
+            x, y = self._head.rect.midright
+            self._right_eye.pos = (x - radius, y)
+        else:
+            x, y = self._head.rect.midtop
+            self._left_eye.pos = (x, y + radius)
+            x, y = self._head.rect.midbottom
+            self._right_eye.pos = (x, y - radius)
         self._left_eye.target = target
         self._right_eye.target = target
 
@@ -70,8 +77,10 @@ class SnakeBody(ImageObject):
         self._movement_counter = 0
         super(SnakeBody, self).__init__((-100, -100), settings.body1_image if index == 0 else settings.body2_image,
                                         settings.snake_size)
-        self.add(STARTER_SIZE - 1)
         self._current_block = None
+        self._last_block = None
+        self._tail_image = Clicker((0, 0), TAIL_IMAGE, 0, 0).copy_color(BLACK, settings.background_color)
+        self.reset()
 
     def draw(self, screen):
         (x, y), direction = self._pos, self.direction
@@ -94,10 +103,36 @@ class SnakeBody(ImageObject):
         s_x, s_y = self._pos
         screen.blit(self._image.subsurface(((x - s_x, y - s_y) + del_size)), (x, y))
 
-        # screen.blit(self._image, self._pos)
+    def round_tail(self, screen):
+        counter = self._movement_counter + 1
+        if counter == MOVEMENT_COUNTER:
+            (x, y), direction = self._current_block
+            counter = 0
+        else:
+            (x, y), direction = self._last_block
+        movement_delta = cal_movement()
+        pos_delta = movement_delta * counter
+        if counter == MOVEMENT_COUNTER - 1:
+            movement_delta = settings.block_size - movement_delta * counter
+        if direction == DIR_DOWN:
+            y += pos_delta
+            del_size = (settings.block_size, movement_delta)
+        elif direction == DIR_UP:
+            y += settings.block_size - pos_delta - movement_delta
+            del_size = (settings.block_size, movement_delta)
+        elif direction == DIR_LEFT:
+            x += settings.block_size - pos_delta - movement_delta
+            del_size = (movement_delta, settings.block_size)
+        else:
+            x += pos_delta
+            del_size = (movement_delta, settings.block_size)
+        image = self._tail_image.copy()
+        image.repos((x, y), HEAD_DIRECTIONS[direction])
+        image.size = sorted(del_size, reverse=True)
+        image.draw(screen)
 
     def delete(self, screen):
-        (x, y), direction = self._current_block
+        (x, y), direction = self._last_block
         movement_delta = cal_movement()
         pos_delta = movement_delta * self._movement_counter
         if self._movement_counter == MOVEMENT_COUNTER - 1:
@@ -118,7 +153,7 @@ class SnakeBody(ImageObject):
 
     def add(self, value=1):
         for _ in range(value):
-            self._queue.put(((-100, -100), self.direction))
+            self._queue.put((self._pos, self.direction))
 
     def repos(self, pos, _=None):
         self._pos = pos
@@ -127,17 +162,23 @@ class SnakeBody(ImageObject):
     def update(self, pos, screen):
         if self._movement_counter == 0:
             self.repos(pos)
+            self._last_block = self._current_block
             self._current_block = self._queue.get()
-        self.delete(screen)
+            if self._current_block[0] == self._last_block[0]:
+                self._current_block = self._last_block
         self.draw(screen)
+        if self._current_block[0] != self._last_block[0]:
+            self.delete(screen)
+            self.round_tail(screen)
         self._movement_counter = (self._movement_counter + 1) % MOVEMENT_COUNTER
 
     def reset(self):
         self._queue = Queue()
         self._pos = (-100, -100)
-        self.add(STARTER_SIZE - 1)
+        self.add(STARTER_SIZE)
         self._movement_counter = 0
-        self._current_block = None
+        self._current_block = self._queue.get()
+        self._last_block = None
 
     def __len__(self):
         return self._queue.qsize()
@@ -293,6 +334,7 @@ class Snake(ScreenObject):
             if self._got_dir is not False:
                 self._direction = self._got_dir
                 self._got_dir = False
+                self._play_redirect()
             current_pos = self._pos
             self._pos = self._next_pos
             if not self._check_food(food, screen):
@@ -309,7 +351,6 @@ class Snake(ScreenObject):
         return self._dsq
 
     def set_direction(self, button):
-        last_dir = self._got_dir
         if self._got_dir is False:
             if button in P2_CVT_KEYS:
                 button = P2_CVT_KEYS[button]
@@ -321,8 +362,6 @@ class Snake(ScreenObject):
                 self._got_dir = DIR_RIGHT
             elif button == pygame.K_LEFT and self._direction not in [DIR_RIGHT, DIR_LEFT]:
                 self._got_dir = DIR_LEFT
-        if last_dir is not self._got_dir:
-            self._play_redirect()
 
     @property
     def optional_arrows(self):

@@ -97,6 +97,10 @@ class ImageObject(ScreenObject):
         self._size = self._image.get_size()
 
     @property
+    def direction(self):
+        return self._direction
+
+    @property
     def _display_image(self):
         return pygame.transform.rotate(self._image, self._direction)
 
