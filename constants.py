@@ -30,8 +30,25 @@ SHIFTED_SPECIAL_CHARS: Dict[int, str] = {39: '"', 44: '<', 45: '_', 46: '>', 47:
 
 TITLE_FONT: str = r'files\fonts\title_font.ttf'
 TEXT_FONT: str = r'files\fonts\text_font.ttf'
+
 SETTING_FILE = r'settings.txt'
-BACKGROUND_IMG = r'files\lobby.png'
+
+VOLUME_IMAGES: List[str] = [r'files\buttons\volume0.png', r'files\buttons\volume1.png', r'files\buttons\volume2.png',
+                            r'files\buttons\volume3.png']
+BACKGROUND_IMG = r'files\animation\lobby.png'
+HEAD_IMAGE = r'files\animation\head.png'
+BODY_IMAGE = r'files\animation\body.png'
+
+ERROR_SOUND = r'files\sounds\error.ogg'
+BACKGROUND_SOUND = r'files\sounds\background.ogg'
+BUTTON_SOUND = r'files\sounds\button.ogg'
+REDIRECT_SOUND = r'files\sounds\direction4.ogg'
+EAT_SOUND = r'files\sounds\eat.ogg'
+
+TEMP_MSG_CHANNEL = 0
+BUTTON_CHANNEL = 1
+SNAKE_CHANNEL = 2
+FOOD_CHANNEL = 3
 
 TOPLEFT: str = 'topleft'
 CENTER: str = 'center'
@@ -45,9 +62,6 @@ MOUSE_RIGHT: int = 3
 MOUSE_SCROLL_UP: int = 4
 MOUSE_SCROLL_DOWN: int = 5
 
-#VOLUME_POS: POSITION = (955, 370)
-VOLUME_IMAGES: List[str] = [r'files\buttons\volume0.png', r'files\buttons\volume1.png', r'files\buttons\volume2.png',
-                            r'files\buttons\volume3.png']
 
 WINDOW_TITLE: str = 'Snake'
 
@@ -56,16 +70,15 @@ DIR_DOWN: int = 1
 DIR_LEFT: int = 2
 DIR_RIGHT: int = 3
 HEAD_DIRECTIONS = {DIR_UP: 0, DIR_RIGHT: 270, DIR_DOWN: 180, DIR_LEFT: 90}
+STARTER_SIZE: int = 4
+MOVEMENT_COUNTER = 4
 
 RESOLUTION_RATIO: float = 9/16
 BASE_RESOLUTION = 720
 
-STARTER_SIZE: int = 4
 
 DATA_ZONE_SIZE: float = 0.2
 
-ERROR_SOUND = r'files\error.ogg'
-TEMP_MSG_CHANNEL = 0
 
 LOBBY_REFRESH_RATE = 30
 
@@ -76,5 +89,6 @@ P2_CVT_KEYS = {pygame.K_w: pygame.K_UP,
 
 BATTLE_TIMER = 60
 SURVIVAL_TIMER = 20
+TEMP_MSG_EXIST_TIMER = 4
 
 BASE_OBSTACLE_SPEED = 20

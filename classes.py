@@ -32,6 +32,7 @@ class Settings:
         self._teleport = None
         self._has_change = None
         self.reset()
+        self._has_change = False
 
     @property
     def resolution(self):
@@ -105,7 +106,8 @@ class Settings:
         try:
             with open(SETTING_FILE, 'rb') as my_file:
                 content = pickle.loads(my_file.read())
-            self._resolution, self._base_block_size, self._refresh_rate, self._base_text_size, self._head_color, self._body_color, self._bg_color, self._food_color, self._teleport = content
+            self._resolution, self._base_block_size, self._refresh_rate, self._base_text_size, self._head_color,\
+                self._body_color, self._bg_color, self._food_color, self._teleport = content
             self._has_change = True
         except (FileNotFoundError, ValueError):
             self._resolution: int = 480
@@ -126,35 +128,78 @@ class Settings:
         return change
 
 
-settings = Settings()
-clock = pygame.time.Clock()
+class DataManager:
+    def __init__(self, screen: pygame.Surface):
+        self._running = True
+        self._volume = VolumeBar(screen, 0)
+        self._volume.value = 0
+        pygame.mixer.music.set_volume(self._volume.value)
+        self._temp_msgs = TempMsgList(screen)
+        self._background_img = pygame.transform.scale(pygame.image.load(BACKGROUND_IMG), screen.get_size())
+        self._screen = screen
+
+    @property
+    def running(self):
+        return self._running
+
+    @running.setter
+    def running(self, running):
+        self._running = running
+
+    @property
+    def volume(self):
+        return self._volume
+
+    def __iadd__(self, other: str):
+        if self._running:
+            self._temp_msgs += TempMsg(other, self._screen, volume=self._volume.value)
+        return self
+
+    def handle_events(self, events):
+        if self._volume.handle_events(events):
+            pygame.mixer.music.set_volume(self._volume.value)
+
+    def draw(self, screen):
+        self._volume.draw(screen)
+        self._temp_msgs.draw(screen)
+
+    def delete(self, screen):
+        screen.blit(self._background_img, (0, 0))
+
+    def empty(self):
+        self._temp_msgs.empty()
 
 
 class Message:
-    """
-    מחלקה האחראית על יצירת אובייקטים של טקסט הניתן להציגם למסך
-    """
-
     def __init__(self, pos: POSITION, text: str, size: int, color: COLOR, position_at: str = TOPLEFT, title=False):
-
         self._text = text
         self._color = color
-        # יוצר אובייקט פונט
         self._text_font = pygame.font.Font(TITLE_FONT if title else TEXT_FONT, size)
-        # יוצר אובייקט טקסט מאובייקט הפונט
         self._text_surf = self._text_font.render(text, True, color)
         self._rect = self._text_surf.get_rect()
         self._position_at = position_at
+        self._played_sound = False
         self.pos = pos
 
     def __str__(self):
         return self._text
 
-    def draw(self, screen: pygame.Surface, pos=None):
-        if pos:
-            screen.blit(self._text_surf, pos)
+    def draw(self, screen: pygame.Surface):
+        screen.blit(self._text_surf, self._rect.topleft)
+        if self.is_touch_mouse():
+            if not self._played_sound:
+                self._play_sound()
         else:
-            screen.blit(self._text_surf, self._rect.topleft)
+            self._played_sound = False
+
+    def is_touch_mouse(self):
+        x1, y1 = pygame.mouse.get_pos()
+        width1, height1 = 1, 1
+        mouse_rect = pygame.Rect(x1, y1, width1, height1)
+        return mouse_rect.colliderect(self.rect)
+
+    def _play_sound(self):
+        self._played_sound = True
 
     @property
     def size(self):
@@ -192,7 +237,18 @@ class Message:
 
     @property
     def pos(self):
-        return self.rect.topleft
+        if self._position_at == TOPLEFT:
+            return self._rect.topleft
+        elif self._position_at == CENTER:
+            return self._rect.center
+        elif self._position_at == TOPRIGHT:
+            return self._rect.topright
+        elif self._position_at == BOTTOMLEFT:
+            return self._rect.bottomleft
+        elif self._position_at == BOTTOMRIGHT:
+            return self._rect.bottomright
+        else:
+            raise ValueError
 
     @pos.setter
     def pos(self, pos):
@@ -214,7 +270,6 @@ class DataMessage(Message):
     """
     מחלקה האחראית על יצירת הודעות עם תוכן משתנה
     """
-
     def __init__(self, pos: POSITION, text: str, size: int, color: COLOR, position_at=TOPLEFT,
                  value=None, func: Callable = lambda v: v, title=False):
         """
@@ -287,19 +342,15 @@ class DataMessage(Message):
             self._rect = self._text_surf.get_rect()
             self._rect.topleft = top_left
 
-    def draw(self, screen: pygame.Surface, pos=None):
+    def draw(self, screen: pygame.Surface):
         self.update_text()
-        if pos:
-            screen.blit(self._text_surf, pos)
-        else:
-            screen.blit(self._text_surf, self._rect.topleft)
+        super(DataMessage, self).draw(screen)
 
 
 class LoadingMessage(DataMessage):
     """
     המחלקה האחראית על יצירת הודעות המראות על טעינה
     """
-
     def __init__(self, pos: POSITION, text: str, size: int, color: COLOR, position_at=TOPLEFT):
         """
         הפעולה הבונה
@@ -312,21 +363,16 @@ class LoadingMessage(DataMessage):
         super(LoadingMessage, self).__init__(pos, text + '{}', size, color, position_at, 0,
                                              lambda v: 2 * v // settings.refresh_rate % 4 * '.')
 
-    def draw(self, screen: pygame.Surface, pos=None):
+    def draw(self, screen: pygame.Surface):
         self._value += 1
-        self.update_text()
-        if pos:
-            screen.blit(self._text_surf, pos)
-        else:
-            screen.blit(self._text_surf, self._rect.topleft)
+        super(LoadingMessage, self).draw(screen)
 
 
 class TempMsg(Message):
     """
     המחלקה האחראית על הצגת הודעות זמניות
     """
-
-    def __init__(self, text: str, color: COLOR = WHITE, play_error_sound: bool = True, volume: int = 1):
+    def __init__(self, text: str, screen, color: COLOR = WHITE, play_error_sound: bool = True, volume: float = 1):
         """
         הפעולה הבונה
         :param text: ראה במחלקת האב
@@ -334,28 +380,25 @@ class TempMsg(Message):
         :param play_error_sound: האם להפעיל סאונד של שגיאה או לא
         :param volume: עוצמת הווליום של סאונד השגיאה (מספר בין 0 ל-1)
         """
-        super(TempMsg, self).__init__((0, 0), text, settings.text_size, color, CENTER)
+        super(TempMsg, self).__init__(screen.get_rect().center, text, settings.text_size, color, CENTER)
         if play_error_sound:
             channel = pygame.mixer.Channel(TEMP_MSG_CHANNEL)
             channel.set_volume(volume)
             channel.play(pygame.mixer.Sound(ERROR_SOUND))
-        self._existence_time = 4
-        self._rate = LOBBY_REFRESH_RATE
-        self._time_counter = self._existence_time * self._rate
+        self._play_error_sound = play_error_sound
+        self._speed = self._rect.centery / (LOBBY_REFRESH_RATE * TEMP_MSG_EXIST_TIMER)
+        self._color_dec = [item / (LOBBY_REFRESH_RATE * TEMP_MSG_EXIST_TIMER) for item in self.color]
 
-    def draw(self, screen: pygame.Surface, pos=None, reverse=False) -> bool:
+    def draw(self, screen: pygame.Surface) -> bool:
         """
         מצייר את ההודעה אל המסך
         :param screen: אובייקט המסך
-        :param pos: מיקום לצייר בו את ההודעה
-        :param reverse: האם לצייר את ההודעה עם דהייה לבהיר או לכהה
         :return: True - אם זמן ההודעה פג וצריך להוריד אותה
                  False - אחרת
         """
-        self._time_counter -= 1
-        self.fade_in() if reverse else self.fade_out()
-        screen.blit(self._text_surf, pos) if pos else screen.blit(self._text_surf, self.current_pos)
-        if self._time_counter == 0:
+        self.fade_out()
+        super(TempMsg, self).draw(screen)
+        if self.rect.top < 0:
             return True
         return False
 
@@ -364,45 +407,35 @@ class TempMsg(Message):
         משנה את הצבע של ההודעה לבהיר יותר
         :return: None
         """
-        color = [int(self._time_counter / self._rate / self._existence_time * item) for item in self._color]
-        self._text_surf = self._text_font.render(self._text, True, color)
-
-    def fade_in(self) -> NoReturn:
-        """
-        משנה את הצבע של ההודעה לכהה יותר
-        :return: None
-        """
-        color = [255 - int(self._time_counter / self._rate / self._existence_time * item) for item in self._color]
-        self._text_surf = self._text_font.render(self._text, True, color)
+        self.color = self._next_color
+        self.pos = self._next_pos
 
     @property
-    def current_pos(self) -> POSITION:
+    def _next_pos(self) -> POSITION:
         """
         מחזיר את המיקום החדש של ההודעה
         :return: מיקום חדש
         """
-        x, y = self._rect.topleft
-        y = int(self._rect.centery * self._time_counter / self._rate / self._existence_time)
-        return x, y
+        x, y = self.pos
+        return x, y - self._speed
+
+    @property
+    def _next_color(self):
+        return [self._color[i] - self._color_dec[i] for i in range(len(self._color))]
 
 
 class TempMsgList:
     def __init__(self, screen: pygame.Surface):
-        self._lst = []
-        self._screen_pointer = screen
+        self._lst: List[TempMsg] = []
+        self._starter_pos = screen.get_rect().center
 
     def __iadd__(self, other: TempMsg):
-        other.pos = self._screen_pointer.get_rect().center
+        other.pos = self._starter_pos
         self._lst.append(other)
         return self
 
-    def draw(self, reverse: bool = False):
-        """
-        מעדכן את ההודעות הזמניות
-        :param reverse: האם לצייר על צבע שחור או לבן
-        :return: None
-        """
-        to_remove = [msg for msg in self._lst if msg.draw(self._screen_pointer, reverse=reverse)]
+    def draw(self, screen):
+        to_remove = [msg for msg in self._lst if msg.draw(screen)]
         for msg in to_remove:
             self._lst.remove(msg)
 
@@ -414,8 +447,9 @@ class Button:
     """
     המחלקה האחראית על הודעות הניתן ללחוץ עליהן
     """
+    def __init__(self, pos: POSITION, text: str, color: COLOR, description: str, size: int, data: DataManager,
 
-    def __init__(self, pos: POSITION, text: str, color: COLOR, description: str, size: int, position_at: str = TOPLEFT):
+                 position_at: str = TOPLEFT):
         """
         הפעולה הבונה
         :param pos: מיקום
@@ -428,6 +462,8 @@ class Button:
         self._text = Message(pos, text, size, color, position_at)
         self._description = Message((0, 0), description, size, RED, position_at)
         self._color = color
+        self._played_sound = False
+        self._volume = data.volume
 
     def __str__(self):
         return self._text.text
@@ -440,14 +476,22 @@ class Button:
     def pos(self, pos: POSITION):
         self._text.pos = pos
 
-    def draw(self, screen: pygame.Surface, draw_description: bool = True):
+    def _play_sound(self):
+        self._played_sound = True
+        channel = pygame.mixer.Channel(BUTTON_CHANNEL)
+        channel.set_volume(self._volume.value)
+        channel.play(pygame.mixer.Sound(BUTTON_SOUND))
+
+    def draw(self, screen: pygame.Surface):
         if self.is_touch_mouse():
             self.colored()
+            self.draw_description(screen, pygame.mouse.get_pos())
+            if not self._played_sound:
+                self._play_sound()
         else:
+            self._played_sound = False
             self.normal()
         self._text.draw(screen)
-        if draw_description and self.is_touch_mouse():
-            self.draw_description(screen, pygame.mouse.get_pos())
 
     def draw_description(self, screen: pygame.Surface, pos: POSITION):
         x, y = pos
@@ -503,14 +547,13 @@ class Switcher:
     """
     המחלקה האחראית על כפתור סוגר ופותח
     """
-
-    def __init__(self, pos: POSITION):
+    def __init__(self, pos: POSITION, data: DataManager):
         """
         הפעולה הבונה
         :param pos: מיקום הכפתור
         """
-        self._plus_button = Button(pos, '[+]', RED, '', settings.text_size, TOPLEFT)
-        self._minus_button = Button(pos, '[-]', RED, '', settings.text_size, TOPLEFT)
+        self._plus_button = Button(pos, '[+]', RED, '', settings.text_size, data, TOPLEFT)
+        self._minus_button = Button(pos, '[-]', RED, '', settings.text_size, data, TOPLEFT)
         self._is_plus = False
 
     def draw(self, screen: pygame.Surface):
@@ -637,8 +680,8 @@ class ScaleBar:
     המחלקה האחראית על הצגת פס קנה מידה
     """
 
-    def __init__(self, pos: POSITION, title: str, length: int, starter_value: int = 1, min_value: int = 0,
-                 max_value: int = 1):
+    def __init__(self, pos: POSITION, title: str, length: int, data: DataManager, starter_value: int = 1,
+                 min_value: int = 0, max_value: int = 1):
         """
         הפעולה הבונה
         :param pos: מיקום על המסך
@@ -646,7 +689,7 @@ class ScaleBar:
         :param length: אורך הפס
         :param starter_value: הערך ההתחלתי של הפס
         """
-        self._title = Button(pos, title, RED, '', settings.text_size)
+        self._title = Button(pos, title, RED, '', settings.text_size, data)
         x, y = self._rect.midright
         self._dot: Tuple[float, float] = (x + 10, y)
         self._max_value = max_value
@@ -654,14 +697,18 @@ class ScaleBar:
         self._line_rect = pygame.Rect(self._dot, (length, settings.scale_bar_width))
         x, y = self._dot
         self._value_des = DataMessage((int(x), int(y)), '{}', settings.text_size, RED, TOPLEFT, self,
-                                      lambda s: min_value + int(s.value * (max_value - min_value)))
+                                      lambda s: s.real_value)
         self._mouse_down = False
         self._is_active = False
         self.value = (starter_value-self._min_value)/(self._max_value-self._min_value)
 
     @property
     def real_value(self):
-        return self._min_value + int(self.value * (self._max_value - self._min_value))
+        return int(self._min_value + self.value * (self._max_value - self._min_value))
+
+    @real_value.setter
+    def real_value(self, value):
+        self.value = (value-self._min_value) / (self._max_value - self._min_value)
 
     @property
     def _rect(self):
@@ -726,9 +773,9 @@ class ScaleBar:
                 self._dot = (pygame.mouse.get_pos()[0], y)
             elif event.type == pygame.KEYDOWN and self._is_active:
                 if event.key == pygame.K_RIGHT:
-                    self._dot = (x+1, y)
+                    self.real_value += 1
                 elif event.key == pygame.K_LEFT:
-                    self._dot = (x-1, y)
+                    self.real_value -= 1
         if self.value < 0:
             self.value = 0
         elif self.value > 1:
@@ -740,14 +787,12 @@ class VolumeBar:
     """
     המחלקה האחראית על הצגת פס קנה מידה
     """
-
-    def __init__(self, pos: POSITION, length: int, starter_value: int = 1):
-        """
-        הפעולה הבונה
-        :param pos: מיקום על המסך
-        :param length: אורך הפס
-        :param starter_value: הערך ההתחלתי של הפס
-        """
+    def __init__(self, screen: pygame.Surface, starter_value: int = 1):
+        _, y = screen_grids(screen)
+        w, h = screen.get_size()
+        y = int(y - y * DATA_ZONE_SIZE) * settings.snake_speed
+        pos = (w - 50 * settings.delta_size, y)
+        length = h - y
         self._title = [Clicker(img) for img in VOLUME_IMAGES]
         for item in self._title:
             item.pos = pos
@@ -805,7 +850,7 @@ class VolumeBar:
         mouse_rect = pygame.Rect(mouse, (5, 5))
         return mouse_rect.colliderect(self._line_rect) or distance(self._dot, mouse) <= settings.dot_radius
 
-    def active(self, events):
+    def handle_events(self, events):
         """
         מפעיל את המד
         :param events: רשימת אירועים שביצע המשתמש
@@ -835,15 +880,16 @@ class VolumeBar:
 
 
 class SelectionButton(Message):
-    def __init__(self, pos: POSITION, text: str, mode: bool, size: int, position_at: str = TOPLEFT):
+    def __init__(self, pos: POSITION, text: str, mode: bool, size: int, data: DataManager, position_at: str = TOPLEFT):
         self._mode = mode
+        self._volume = data.volume
         super(SelectionButton, self).__init__(pos, text, size, GREEN if self._mode else RED, position_at)
 
-    def is_touch_mouse(self):
-        x1, y1 = pygame.mouse.get_pos()
-        width1, height1 = 1, 1
-        mouse_rect = pygame.Rect(x1, y1, width1, height1)
-        return mouse_rect.colliderect(self.rect)
+    def _play_sound(self):
+        super(SelectionButton, self)._play_sound()
+        channel = pygame.mixer.Channel(BUTTON_CHANNEL)
+        channel.set_volume(self._volume.value)
+        channel.play(pygame.mixer.Sound(BUTTON_SOUND))
 
     def change_mode(self):
         self._mode = not self._mode
@@ -855,17 +901,18 @@ class SelectionButton(Message):
 
 
 class ColorSelector(Message):
-    def __init__(self, pos: POSITION, text: str, color: COLOR, size: int, position_at: str = TOPLEFT,
+    def __init__(self, pos: POSITION, text: str, color: COLOR, size: int, data: DataManager, position_at: str = TOPLEFT,
                  allow_black=False):
         self._color_index = COLORS.index(color)
         self._allow_black = allow_black
+        self._volume = data.volume
         super(ColorSelector, self).__init__(pos, text, size, color, position_at)
 
-    def is_touch_mouse(self):
-        x1, y1 = pygame.mouse.get_pos()
-        width1, height1 = 1, 1
-        mouse_rect = pygame.Rect(x1, y1, width1, height1)
-        return mouse_rect.colliderect(self.rect)
+    def _play_sound(self):
+        super(ColorSelector, self)._play_sound()
+        channel = pygame.mixer.Channel(BUTTON_CHANNEL)
+        channel.set_volume(self._volume.value)
+        channel.play(pygame.mixer.Sound(BUTTON_SOUND))
 
     def change_color(self, forward=True):
         delta = 1 if forward else -1
@@ -904,3 +951,12 @@ def next_pos(start_pos: POSITION, change: POSITION):
         yield int(x), int(y)
         x += c_x
         y += c_y
+
+
+def screen_grids(screen: pygame.Surface):
+    width, height = screen.get_size()
+    return width // settings.snake_speed, height // settings.snake_speed
+
+
+settings = Settings()
+clock = pygame.time.Clock()
