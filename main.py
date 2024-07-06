@@ -190,7 +190,6 @@ def lobby(data: DataManager):
     screen = pygame.display.set_mode(get_resolution())
     pygame.display.set_caption(WINDOW_TITLE)
     data.reset(screen)
-    snake_classic(screen, data)
     start_button = Button((screen.get_rect().centerx, settings.text_size * 5), 'start game!', RED,
                           'click here to start game!', settings.text_size * 2, data, CENTER)
     settings_button = Button((screen.get_rect().centerx, settings.text_size * 12), 'settings', RED,
@@ -288,7 +287,6 @@ def main():
     pygame.init()
     data = DataManager()
     try:
-        lobby(data)
         log_in(data)
         while True:
             try:

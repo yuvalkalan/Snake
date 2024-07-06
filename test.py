@@ -1,90 +1,39 @@
-import sqlite3
+import os
+from PIL import Image
 
-T_NONE = 'NULL'
-T_INT = 'INTEGER'
-T_FLOAT = 'REAL'
-T_STR = 'TEXT'
-T_BYTES = 'BLOB'
+def resize_images_in_directory(input_directory, output_directory, new_width, new_height):
+    try:
+        # Create the output directory if it doesn't exist
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)
 
-TYPES = {None: T_NONE,
-         int: T_INT,
-         float: T_FLOAT,
-         str: T_STR,
-         bytes: T_BYTES}
+        # List all files in the input directory
+        files = os.listdir(input_directory)
 
-CREATE_TABLE_COMMAND = '''CREATE TABLE IF NOT EXISTS'''
-INSERT_COMMAND = '''INSERT INTO'''
-SELECT_COMMAND = '''SELECT'''
+        for file_name in files:
+            if file_name.lower().endswith((".jpg", ".jpeg", ".png")):
+                input_path = os.path.join(input_directory, file_name)
+                output_path = os.path.join(output_directory, file_name)
 
-TABLE_USERS = 'users'
+                # Open the input image
+                img = Image.open(input_path)
 
-INDEX = 'id'
+                # Resize the image
+                resized_img = img.resize((new_width, new_height), Image.ANTIALIAS)
 
-USER_USERNAME = 'username'
-USER_PASSWORD = 'password'
+                # Save the resized image
+                resized_img.save(output_path)
+                print(f"Resized and saved: {file_name}")
 
+        print("All images resized and saved successfully.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
-class Database:
-    def __init__(self):
-        self._connection = sqlite3.connect('database.db')
-        self._cursor = self._connection.cursor()
-        self._table_ids = {}
-        self.create_tables()
-        self._set_tables_id()
+# Specify the input and output directories, new width, and new height
+input_directory = r"C:\Users\yuval's workshop\Desktop\first"  # Replace with your input directory path
+output_directory = r"C:\Users\yuval's workshop\Desktop\second"  # Replace with your desired output directory path
+new_width = 1080  # Replace with the desired new width in pixels
+new_height = 1080  # Replace with the desired new height in pixels
 
-    def _set_tables_id(self):
-        tables_command = '''SELECT name FROM sqlite_schema WHERE type ='table' AND name NOT LIKE 'sqlite_%';'''
-        tables = self._cursor.execute(tables_command).fetchall()
-        for (table,) in tables:
-            try:
-                indexes = [a for (a, ) in self._cursor.execute(f'{SELECT_COMMAND} id FROM {table} DESC').fetchall()]
-                index = max(indexes) + 1
-            except ValueError:
-                index = 0
-            self._table_ids[table] = index
-
-    def _create_table(self, table_name, parameters):
-        values = [f'{v} {TYPES[t]}' for v, t in parameters]
-        values_str = ',\n'.join(values)
-        command = f'''
-        {CREATE_TABLE_COMMAND} {table_name}(
-            {INDEX} {TYPES[int]} PRIMARY KEY UNIQUE,
-            {values_str}
-        );
-        '''
-        self._cursor.execute(command)
-
-    def create_tables(self):
-        self._create_table(TABLE_USERS, [(USER_USERNAME, str),
-                                         (USER_PASSWORD, str)])
-        self._create_table('blabla', [('userssler', str)])
-
-    def add_user(self, username, password):
-        command = f'''
-        {INSERT_COMMAND} users VALUES (?, ?, ?) 
-        '''
-        self._cursor.execute(command, (self._index(TABLE_USERS), username, password))
-
-    def save(self):
-        self._connection.commit()
-
-    def close(self):
-        self.save()
-        self._connection.close()
-
-    def _index(self, table):
-        index = self._table_ids[table]
-        self._table_ids[table] += 1
-        return index
-
-
-def main():
-    db = Database()
-    db.create_tables()
-    for i in range(10):
-        db.add_user('yuval', 'kalan')
-    db.close()
-
-
-if __name__ == '__main__':
-    main()
+# Resize images in the directory
+resize_images_in_directory(input_directory, output_directory, new_width, new_height)
