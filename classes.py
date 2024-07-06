@@ -7,18 +7,6 @@ pygame.font.init()
 pygame.mixer.init()
 
 
-def singleton(cls):
-    instances = {}
-
-    def wrapper(*args, **kwargs):
-        if cls not in instances:
-            instances[cls] = cls(*args, **kwargs)
-        return instances[cls]
-
-    return wrapper
-
-
-@singleton
 class Settings:
     def __init__(self):
         self._resolution = None
@@ -647,14 +635,14 @@ class Clicker:
     המחלקה האחראית על הצגת כפתוריי תמונה
     """
 
-    def __init__(self, image: str, pos: POSITION = (0, 0), center: bool = True, size=-1):
+    def __init__(self, image: Union[str, pygame.Surface], pos: POSITION = (0, 0), center: bool = True, size=-1):
         """
         הפעולה הבונה
         :param image: מיקום ההודעה במחשב
         :param pos: מיקום הכפתור על המסך
         :param center: האם המיקום הוא עבור מרכז ההודעה או עבור הפינה השמאלית עליונה
         """
-        self._image = pygame.image.load(image)
+        self._image = pygame.image.load(image).convert() if type(image) == str else image.copy()
         self._image.set_colorkey(WHITE)
         if size == -1:
             size = settings.delta_size
@@ -689,6 +677,15 @@ class Clicker:
 
     def draw_select(self, screen):
         pygame.draw.rect(screen, RED, self._rect, 5)
+
+    def copy_color(self, src_color, dst_color):
+        w, h = self._rect.size
+        img = self._image.copy()
+        for x in range(w):
+            for y in range(h):
+                if img.get_at((x, y))[:-1] == src_color:
+                    img.set_at((x, y), dst_color)
+        return Clicker(img, self.pos, False, 0)
 
 
 class GIF:
@@ -865,34 +862,48 @@ class VolumeBar:
     המחלקה האחראית על הצגת פס קנה מידה
     """
     def __init__(self, screen: pygame.Surface, starter_value: int = 1):
+
         _, y = screen_grids(screen)
-        w, h = screen.get_size()
         y = int(y - y * DATA_ZONE_SIZE) * settings.snake_speed
-        pos = (w - 50 * settings.delta_size, y)
-        length = h - y
+        length = screen.get_rect().height - y
+
+        rect = pygame.Rect(screen.get_rect().bottomright, (50 * settings.delta_size, 50 * settings.delta_size))
+        rect.bottomright = rect.topleft
+        pos = rect.topleft
         self._title = [Clicker(img) for img in VOLUME_IMAGES]
         for item in self._title:
             item.pos = pos
-        x, y = self._rect.midbottom
-        self._dot = (x, int(y + 5 * settings.delta_size))
-        self._line_rect = pygame.Rect(self._dot, (settings.scale_bar_width, length - self._rect.height - 15))
+        x, y = self._rect.midtop
+        self._dot = (x, int(y - 10 * settings.delta_size))
+        self._line_rect = pygame.Rect(self._dot, (settings.scale_bar_width,
+                                                  length - self._rect.height - rect.height))
+        self._line_rect.midbottom = self._line_rect.midtop
         self._mouse_down = False
         self._is_active = False
+        self._is_mute = False
         self.value = starter_value
 
     @property
     def _rect(self):
         return self._title[0].rect
 
+    @property
+    def color(self):
+        # הצבע בין אדום לירוק כאשר אדום מתקבל כאשר הערך 0 והירוק כאשר הערך 1
+        return int((1 - self.value) * 255), int(self.value * 255), 0
+
+    @property
+    def colored_title(self):
+        return self.this_title.copy_color(BLACK, self.color)
+
     def draw(self, screen):
         if self._is_active:
-            # הצבע בין אדום לירוק כאשר אדום מתקבל כאשר הערך 0 והירוק כאשר הערך 1
-            color = (int((1 - self.value) * 255), int(self.value * 255), 0)
+            color = self.color
             # מייצר את הפס
             pygame.draw.line(screen, color, self._line_rect.topleft, self._line_rect.bottomleft, self._line_rect.width)
             # מצייר את הנקודה
             pygame.draw.circle(screen, color, self._dot, settings.dot_radius)
-        self.this_title.draw(screen)
+        self.colored_title.draw(screen)
 
     @property
     def value(self):
@@ -900,9 +911,11 @@ class VolumeBar:
         ערך ה-value מוגדר להיות מספר בין 0 ל-1. 0 מתקבל כאשר הנקודה הכי קרוב לכותרת, ו1 מתקבל כאשר הנקודה בקצה השני
         :return: ערך הפס
         """
+        if self._is_mute:
+            return 0
         _, dot_y = self._dot
         top, bottom = self._line_rect.top, self._line_rect.bottom
-        return (dot_y - top) / (bottom - top)
+        return (dot_y - bottom) / (top - bottom)
 
     @property
     def this_title(self):
@@ -919,8 +932,9 @@ class VolumeBar:
     @value.setter
     def value(self, value):
         top, bottom = self._line_rect.top, self._line_rect.bottom
-        dot_y = (bottom - top) * value + top
+        dot_y = (top - bottom) * value + bottom
         self._dot = self._dot[0], dot_y
+        self._is_mute = False
 
     def is_touch_mouse(self):
         mouse = pygame.mouse.get_pos()
@@ -938,17 +952,28 @@ class VolumeBar:
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == MOUSE_LEFT:
-                    if self._is_active and self.is_touch_mouse():
+                    if self.is_touch_mouse() and self._is_active:
                         self._mouse_down = True
                         self._dot = (self._dot[0], pygame.mouse.get_pos()[1])
                     elif self.this_title.is_touch_mouse():
-                        self._is_active = not self._is_active
+                        if self._is_active:
+                            self._is_mute = not self._is_mute
+                        else:
+                            self._is_active = not self._is_active
                     else:
                         self._is_active = False
             elif event.type == pygame.MOUSEBUTTONUP:
                 self._mouse_down = False
             elif event.type == pygame.MOUSEMOTION and self._mouse_down and self._is_active:
                 self._dot = (self._dot[0], pygame.mouse.get_pos()[1])
+                self._is_mute = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_m:
+                    self._is_mute = not self._is_mute
+                elif event.key == pygame.K_UP and self._is_active:
+                    self.value += 0.1
+                elif event.key == pygame.K_DOWN and self._is_active:
+                    self.value -= 0.1
         if self.value < 0:
             self.value = 0
         elif self.value > 1:
