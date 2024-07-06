@@ -45,9 +45,7 @@ class Database:
                                          (USER_BODY2, bytes)])
 
     def add_user(self, username, password):
-        command = f'''
-        {INSERT_COMMAND} users VALUES (?, ?, ?, ?, ?, ?, ?);
-        '''
+        command = f'''{INSERT_COMMAND} {TABLE_USERS} VALUES (?, ?, ?, ?, ?, ?, ?);'''
         head1_image = head2_image = pickle.dumps(pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE)))
         body1_image = body2_image = pickle.dumps(pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE)))
         self._cursor.execute(command, (self._index(TABLE_USERS), username, password,
@@ -63,17 +61,28 @@ class Database:
         {USER_BODY2} = ?
          WHERE {USER_USERNAME} = ?;
         """
-        new_args: List[Any] = [pickle.dumps(a) for a in args]
+        if args:
+            new_args: List[Any] = [pickle.dumps(a) for a in args]
+        else:
+            new_args: List[Any] = [pickle.dumps(a) for a in [pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE)),
+                                                             pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE)),
+                                                             pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE)),
+                                                             pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))]]
         new_args.append(username)
         self._cursor.execute(command, new_args)
         self.save()
 
-    def get_skin(self, username):
+    def get_skin(self, username=None):
         command = f"""
         {SELECT_COMMAND} {USER_HEAD1}, {USER_HEAD2}, {USER_BODY1}, {USER_BODY2}
          FROM {TABLE_USERS}
-         WHERE {USER_USERNAME}=?;
+         WHERE {USER_USERNAME} = ?;
         """
+        if username is None:
+            return [pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE)),
+                    pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE)),
+                    pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE)),
+                    pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))]
         return [pickle.loads(skin) for skin in self._cursor.execute(command, [username]).fetchone()]
 
     def save(self):
@@ -89,9 +98,7 @@ class Database:
         return index
 
     def user_id(self, username):
-        command = f"""
-        {SELECT_COMMAND} {INDEX} FROM {TABLE_USERS} WHERE {USER_USERNAME} = ?;
-        """
+        command = f"""{SELECT_COMMAND} {INDEX} FROM {TABLE_USERS} WHERE {USER_USERNAME} = ?;"""
         try:
             index, = self._cursor.execute(command, [username]).fetchone()
         except TypeError:

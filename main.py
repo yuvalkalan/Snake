@@ -47,7 +47,7 @@ def pick_gameplay(screen, data: DataManager):
         data.delete(screen)
 
 
-def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
+def edit_skin(screen: pygame.Surface, data: DataManager) -> None:
     pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.block_size * 2.5))
     paint_bar = PaintBar(pos, data)
     x, y = next(pos)
@@ -74,12 +74,11 @@ def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == MOUSE_LEFT:
                     if save_button.is_touch_mouse():
-                        return image_editors
+                        settings.rewrite_skin(*[img.to_bytes() for img in image_editors])
+                        return
                     elif reset_button.is_touch_mouse():
-                        return [ImageEditor((x, y), HEAD_IMAGE, paint_bar),
-                                ImageEditor(next(snake2_pos), HEAD_IMAGE, paint_bar),
-                                ImageEditor(next(pos), BODY_IMAGE, paint_bar),
-                                ImageEditor(next(snake2_pos), BODY_IMAGE, paint_bar)]
+                        settings.rewrite_skin_to_default()
+                        return
         save_button.draw(screen)
         reset_button.draw(screen)
         for image in image_editors:
@@ -91,15 +90,40 @@ def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
         data.delete(screen)
 
 
+def edit_user_settings(screen: pygame.Surface, data: DataManager):
+    pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.text_size * 2))
+    skin_button = Button(next(pos), 'edit skin', RED, '', settings.text_size, data)
+    while data.running:
+        events = pygame.event.get()
+        data.handle_events(events)
+        for event in events:
+            if event.type == pygame.QUIT:
+                data.running = False
+                raise QuitPressed
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == MOUSE_LEFT:
+                    if skin_button.is_touch_mouse():
+                        try:
+                            edit_skin(screen, data)
+                        except EscPressed:
+                            pass
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    raise EscPressed
+        skin_button.draw(screen)
+        data.draw(screen)
+        pygame.display.flip()
+        data.delete(screen)
+
+
 def edit_settings(screen: pygame.Surface, data: DataManager):
     bar_length = (1080 - 480) // 5
     pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.text_size * 2))
+    user_button = Button(next(pos), 'user settings', RED, '', settings.text_size, data)
     conf_bars = [ScaleBar(next(pos), 'resolution', bar_length, data, settings.resolution, 480, 1080),
                  ScaleBar(next(pos), 'block size', bar_length, data, settings.base_block_size, 2, 50),
                  ScaleBar(next(pos), 'game speed', bar_length, data, settings.refresh_rate, 1, 50),
                  ScaleBar(next(pos), 'text size', bar_length, data, settings.base_text_size, 10, 40)]
-    buttons = {Button(next(pos), 'edit skin', RED, '', settings.text_size, data): edit_skin}
-    image_obj: List[ImageObject] = []
     conf_colors = [ColorSelector(next(pos), 'background color', settings.background_color, settings.text_size, data,
                                  allow_black=True),
                    ColorSelector(next(pos), 'food color', settings.food_color, settings.text_size, data)]
@@ -124,7 +148,7 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
                         teleport_button.change_mode()
                     elif submit_button.is_touch_mouse():
                         if check_settings(conf_bars, conf_colors, teleport_button, data):
-                            submit_settings(data, conf_bars, conf_colors, teleport_button, image_obj)
+                            submit_settings(data, conf_bars, conf_colors, teleport_button)
                             raise SettingsChanged
                     elif reset_button.is_touch_mouse():
                         try:
@@ -133,17 +157,16 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
                         except FileNotFoundError:
                             pass
                         raise SettingsChanged
+                    elif user_button.is_touch_mouse():
+                        try:
+                            edit_user_settings(screen, data)
+                        except EscPressed:
+                            pass
                     else:
                         for color in conf_colors:
                             if color.is_touch_mouse():
                                 color.change_color()
                                 break
-                        for button in buttons:
-                            if button.is_touch_mouse():
-                                try:
-                                    image_obj = buttons[button](screen, data)
-                                except EscPressed:
-                                    pass
                 elif event.button == MOUSE_RIGHT:
                     for color in conf_colors:
                         if color.is_touch_mouse():
@@ -151,8 +174,7 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
                             break
         for bar in conf_bars:
             bar.draw(screen)
-        for button in buttons:
-            button.draw(screen)
+        user_button.draw(screen)
         for color in conf_colors:
             color.draw(screen)
         teleport_button.draw(screen)

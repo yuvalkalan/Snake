@@ -16,16 +16,7 @@ def get_resolution() -> POSITION:
     return grid_w * settings.snake_speed, grid_h * settings.snake_speed
 
 
-def submit_settings(data, conf_bars, conf_colors, teleport_button, image_obj: List[ImageObject]):
-    if image_obj:
-        skin = [img.to_bytes() for img in image_obj]
-    else:
-        skin = [pygame.surfarray.array3d(settings.head1_image),
-                pygame.surfarray.array3d(settings.head2_image),
-                pygame.surfarray.array3d(settings.body1_image),
-                pygame.surfarray.array3d(settings.body2_image)]
-    settings.rewrite_skin(*skin)
-
+def submit_settings(data, conf_bars, conf_colors, teleport_button):
     lst = [bar.real_value for bar in conf_bars]
     lst += [color.real_value for color in conf_colors]
     lst += [teleport_button.real_value]

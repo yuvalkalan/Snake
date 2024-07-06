@@ -244,20 +244,26 @@ class Settings:
         self._food_color = next(lst)
         self._teleport = next(lst)
         self._last_volume = next(lst)
-        if self._username:
-            self._head1_image, self._head2_image, self._body1_image, self._body2_image = db.get_skin(self._username)
+        self._head1_image, self._head2_image, self._body1_image, self._body2_image = db.get_skin(self._username)
         self._has_change = True
 
     def rewrite_skin(self, *skin):
         db.set_skin(self._username, *skin)
+        self.reset()
+
+    def rewrite_skin_to_default(self):
+        db.set_skin(self._username)
+        self.reset()
+
+    def set_default_skin(self):
+        self._head1_image, self._head2_image, self._body1_image, self._body2_image = db.get_skin()
 
     def set_to_default(self):
         self._resolution: int = 710
         self._base_block_size: int = 29
         self._refresh_rate: int = 30
         self._base_text_size: int = 20
-        self._head1_image = self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
-        self._body1_image = self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
+        self.set_default_skin()
         self._bg_color = BLACK
         self._food_color = YELLOW
         self._teleport = True
