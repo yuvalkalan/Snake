@@ -165,7 +165,7 @@ def edit_settings(screen: pygame.Surface, data: DataManager):
 
 
 def lobby(data: DataManager):
-    screen = pygame.display.set_mode(resolution())
+    screen = pygame.display.set_mode(get_resolution())
     pygame.display.set_caption(WINDOW_TITLE)
     data.reset(screen)
 
@@ -173,8 +173,6 @@ def lobby(data: DataManager):
                           'click here to start game!', settings.text_size * 2, data, CENTER)
     settings_button = Button((screen.get_rect().centerx, settings.text_size * 12), 'settings', RED,
                              'click here to change settings!', settings.text_size * 2, data, CENTER)
-    pygame.mixer.music.load(BACKGROUND_SOUND)
-    pygame.mixer.music.play(-1)
     while data.running:
         events = pygame.event.get()
         data.handle_events(events)
@@ -202,10 +200,73 @@ def lobby(data: DataManager):
         data.delete(screen)
 
 
+def check_details(boxes, is_login):
+    values = boxes.value
+    if is_login:
+        username, password = values
+        index = db.user_id(username)
+        if index == -1:
+            raise LoginError('username not exist in the database!')
+        if db.users_password[index] != password:
+            raise LoginError("username and password don't match!")
+        settings.set_username(username)
+    else:
+        username, password, confirm = values
+        index = db.user_id(username)
+        if index != -1:
+            raise LoginError('username already exist in the database!')
+        if password != confirm:
+            raise LoginError("passwords don't match!")
+        db.add_user(username, password)
+        settings.set_username(username)
+
+
+def log_in(data: DataManager):
+    screen = pygame.display.set_mode(get_resolution())
+    pygame.display.set_caption(WINDOW_TITLE)
+    data.reset(screen)
+    pos = (settings.text_size * 5, settings.text_size * 5)
+    is_login = True
+    login_boxes = Inputs(pos, [('username', False), ('password', True)])
+    register_boxes = Inputs(pos, [('username', False), ('password', True), ('confirm password', True)])
+    log_in_button = Button(screen.get_rect().center, 'already have an account? log in here!',
+                           RED, '', settings.text_size, data, CENTER)
+    register_button = Button(screen.get_rect().center, "don't have an account? register here!",
+                             RED, '', settings.text_size, data, CENTER)
+    while data.running:
+        button = register_button if is_login else log_in_button
+        boxes = login_boxes if is_login else register_boxes
+        events = pygame.event.get()
+        data.handle_events(events)
+        boxes.active(events)
+        for event in events:
+            if event.type == pygame.QUIT:
+                data.running = False
+                raise QuitPressed
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == MOUSE_LEFT:
+                    if button.is_touch_mouse():
+                        is_login = not is_login
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    try:
+                        check_details(boxes, is_login)
+                        return
+                    except LoginError as error:
+                        data += str(error)
+        boxes.draw(screen)
+        button.draw(screen)
+        data.draw(screen)
+        pygame.display.flip()
+        clock.tick(LOBBY_REFRESH_RATE)
+        data.delete(screen)
+
+
 def main():
     pygame.init()
     data = DataManager()
     try:
+        log_in(data)
         while True:
             try:
                 lobby(data)
@@ -214,8 +275,8 @@ def main():
     except QuitPressed:
         settings.write_volume(data.volume.value)
     pygame.quit()
+    db.close()
 
 
 if __name__ == '__main__':
     main()
-

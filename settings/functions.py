@@ -8,7 +8,7 @@ def round_to_grid(pos):
     return x, y
 
 
-def resolution() -> POSITION:
+def get_resolution() -> POSITION:
     width, height = (int(BASE_RESOLUTION / RESOLUTION_RATIO), BASE_RESOLUTION)
     width = width - width % settings.base_snake_speed
     height = height - height % settings.base_snake_speed
@@ -17,18 +17,21 @@ def resolution() -> POSITION:
 
 
 def submit_settings(data, conf_bars, conf_colors, teleport_button, image_obj: List[ImageObject]):
-    lst = [bar.real_value for bar in conf_bars]
     if image_obj:
-        lst += [img.to_bytes() for img in image_obj]
+        skin = [img.to_bytes() for img in image_obj]
     else:
-        lst += [pygame.surfarray.array3d(settings.head1_image),
+        skin = [pygame.surfarray.array3d(settings.head1_image),
                 pygame.surfarray.array3d(settings.head2_image),
                 pygame.surfarray.array3d(settings.body1_image),
                 pygame.surfarray.array3d(settings.body2_image)]
+    settings.rewrite_skin(*skin)
+
+    lst = [bar.real_value for bar in conf_bars]
     lst += [color.real_value for color in conf_colors]
     lst += [teleport_button.real_value]
     lst += [data.volume.value]
     settings.set_params(lst)
+
     settings.rewrite()
     raise SettingsChanged
 

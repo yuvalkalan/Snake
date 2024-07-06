@@ -21,3 +21,7 @@ class UserDsq(Error):
 class SettingsChanged(Error):
     """Raised when the user change the settings"""
     pass
+
+
+class LoginError(Error):
+    """Raised when the user login details are wrong"""

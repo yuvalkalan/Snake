@@ -3,6 +3,7 @@ from basicFont import *
 import pygame
 import math
 import pickle
+from .database import db
 
 
 class VolumeBar(ImageObject):
@@ -13,7 +14,7 @@ class VolumeBar(ImageObject):
         pos_x, pos_y = screen.get_rect().bottomright
         super(VolumeBar, self).__init__((pos_x - 5, pos_y - 5), VOLUME_IMAGES[0], settings.delta_size,
                                         position_at=BOTTOMRIGHT)
-        self._title = [Clicker(self._pos, img) for img in VOLUME_IMAGES]
+        self._title = [Clicker(self._pos, img, settings.delta_size) for img in VOLUME_IMAGES]
         x, y = self.rect.midtop
         dot_img_distance = 10 * settings.delta_size
 
@@ -137,6 +138,7 @@ class Settings:
         self._teleport = None
         self._has_change = None
         self._last_volume = None
+        self._username = None
         self.reset()
         self._has_change = False
 
@@ -228,21 +230,26 @@ class Settings:
     def snake_size(self):
         return settings.base_block_size / DEFAULT_BLOCK_SIZE * settings.delta_size
 
+    def set_username(self, username):
+        self._username = username
+        self._head1_image, self._head2_image, self._body1_image, self._body2_image = db.get_skin(self._username)
+
     def set_params(self, lst):
         lst = iter(lst)
         self._resolution = next(lst)
         self._base_block_size = next(lst)
         self._refresh_rate = next(lst)
         self._base_text_size = next(lst)
-        self._head1_image = next(lst)
-        self._head2_image = next(lst)
-        self._body1_image = next(lst)
-        self._body2_image = next(lst)
         self._bg_color = next(lst)
         self._food_color = next(lst)
         self._teleport = next(lst)
         self._last_volume = next(lst)
+        if self._username:
+            self._head1_image, self._head2_image, self._body1_image, self._body2_image = db.get_skin(self._username)
         self._has_change = True
+
+    def rewrite_skin(self, *skin):
+        db.set_skin(self._username, *skin)
 
     def set_to_default(self):
         self._resolution: int = 710
@@ -264,10 +271,6 @@ class Settings:
                        self._base_block_size,
                        self._refresh_rate,
                        self._base_text_size,
-                       self._head1_image,
-                       self._head2_image,
-                       self._body1_image,
-                       self._body2_image,
                        self._bg_color,
                        self._food_color,
                        self._teleport,
@@ -305,6 +308,11 @@ class DataManager:
         self._temp_msgs = None
         self._background_img = None
         self._screen = None
+        self._username = None
+        self._password = None
+        pygame.mixer.music.set_volume(settings.last_volume)
+        pygame.mixer.music.load(BACKGROUND_SOUND)
+        pygame.mixer.music.play(-1)
 
     @property
     def running(self):
@@ -313,6 +321,22 @@ class DataManager:
     @running.setter
     def running(self, running):
         self._running = running
+    
+    @property
+    def username(self):
+        return self._username
+    
+    @username.setter
+    def username(self, value):
+        self._username = value
+        
+    @property
+    def password(self):
+        return self._password
+
+    @password.setter
+    def password(self, value):
+        self._password = value
 
     @property
     def volume(self):
@@ -345,6 +369,7 @@ class DataManager:
         self._temp_msgs = TempMsgList(screen)
         self._background_img = pygame.transform.scale(pygame.image.load(BACKGROUND_IMG), screen.get_size())
         self._screen = screen
+        self.delete(screen)
 
 
 class TempMsg(Message):

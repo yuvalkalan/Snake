@@ -1,4 +1,7 @@
 from .constants import *
+import keyboard
+import win32api
+import win32con
 
 
 def distance(obj1, obj2) -> float:
@@ -32,3 +35,18 @@ def play_sound(channel_number: int, sound_file: str, volume: float):
     channel = pygame.mixer.Channel(channel_number)
     channel.set_volume(volume)
     channel.play(pygame.mixer.Sound(sound_file))
+
+
+def get_caps_lock_status():
+    status = win32api.GetKeyState(win32con.VK_CAPITAL)
+    if status == -127 or status == 1:
+        return True
+    return False
+
+
+def get_shift_status():
+    return keyboard.is_pressed('shift')
+
+
+def big_letter():
+    return get_shift_status() ^ get_caps_lock_status()
