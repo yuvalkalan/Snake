@@ -3,33 +3,177 @@ from queue import Queue
 from classes import *
 
 
-class BlockObject:
-    def __init__(self, pos, size: Tuple[int, int], color):
+class GameObject:
+    def __init__(self, pos: POSITION, size: POSITION):
         self._pos = pos
         self._size = size
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @property
+    def size(self):
+        return self._size
+
+    @property
+    def rect(self):
+        return pygame.Rect(self._pos, self._size)
+
+    def is_touch(self, other: {rect}):
+        return self.rect.colliderect(other.rect)
+
+    def draw(self, screen: pygame.Surface):
+        pass
+
+    def delete(self, screen):
+        screen.fill(settings.background_color, self.rect)
+
+
+class BlockObject(GameObject):
+    def __init__(self, pos: POSITION, size: POSITION, color):
+        super(BlockObject, self).__init__(pos, size)
         self._color = color
 
     def draw(self, screen):
         screen.fill(self._color, self.rect)
 
-    def delete(self, screen):
-        screen.fill(settings.background_color, self.rect)
+
+class ImageObject(GameObject):
+    def __init__(self, pos, img_name, direction=0, color_key=WHITE):
+        self._image = pygame.image.load(img_name).convert()
+        self._image.set_colorkey(color_key)
+        self._image = pygame.transform.scale(self._image, (settings.block_size, settings.block_size))
+        super(ImageObject, self).__init__(pos, self._image.get_size())
+        self._direction = direction
 
     @property
-    def rect(self):
-        return pygame.Rect(self._pos, (self._size[0], self._size[1]))
+    def _display_image(self):
+        return pygame.transform.rotate(self._image, self._direction)
 
-    def is_touch(self, other):
-        return self.rect.colliderect(other.rect)
+    def draw(self, screen):
+        screen.blit(self._display_image, self._pos)
+
+    def repos(self, pos, direction=None):
+        self._pos = pos
+        if direction is not None:
+            self._direction = direction
 
 
-class Snake(BlockObject):
+class GifObject(GameObject):
+    def __init__(self, pos, folder, direction=0):
+        self._images = []
+        images = sorted([img for img in os.listdir(folder)], key=lambda f: int(f[:f.index('.')]))
+        size = settings.delta_size
+        for image in images:
+            image = pygame.image.load(fr'{folder}\{image}')
+            width, height = image.get_size()
+            self._images.append(pygame.transform.scale(image, (int(width * size), int(height * size))))
+        self._index = 0
+        self._direction = direction
+        super(GifObject, self).__init__(pos, self._images[0].get_size())
+
+    @property
+    def _display_image(self):
+        img = pygame.transform.rotate(self._images[self._index], self._direction)
+        self._index = (self._index + 1) % len(self._images)
+        return img
+
+    def draw(self, screen):
+        screen.blit(self._display_image, self._pos)
+
+    def repos(self, pos, direction=None):
+        self._pos = pos
+        if direction is not None:
+            self._direction = direction
+
+
+MOVEMENT_COUNTER = 5
+
+
+class Circle:
+    def __init__(self, center, radius):
+        self._center = center
+        self._radius = radius
+
+
+class Eye:
+    def __init__(self, target, center, radius, screen):
+        self._target = target
+        self._center = center
+        self._radius = radius
+        w, h = screen.get_size()
+        self._screen_radius = (w**2 + h**2) ** 0.5
+
+    @property
+    def distance(self):
+        x1, y1 = self._center
+        x2, y2 = self._target
+        return ((x2-x1)**2 + (y1-y2)**2) ** 0.5
+
+    @property
+    def _eye_radius(self):
+        return max(self._radius * (1 - self.distance / self._screen_radius)**5, 3)
+
+    def _closest(self, pos):
+        x1, y1 = pos
+        x2, y2 = self._center
+        angle = math.atan2((y1 - y2), (x1 - x2))
+        x = math.cos(angle) * (self._radius - self._eye_radius) + x2
+        y = math.sin(angle) * (self._radius - self._eye_radius) + y2
+        return x, y
+
+    def draw(self, screen):
+        pygame.draw.circle(screen, WHITE, self._center, self._radius)
+        pygame.draw.circle(screen, GREEN, self._closest(self._target), self._eye_radius)
+
+    @property
+    def target(self):
+        return self._target
+
+    @target.setter
+    def target(self, target):
+        self._target = target
+
+    @property
+    def center(self):
+        return self._center
+
+    @center.setter
+    def center(self, center):
+        self._center = center
+
+
+class SnakeEyes:
+    def __init__(self, head, target, screen):
+        self._head = head
+        x, y = self._head.rect.midleft
+        radius = (self._head.rect.centerx - x) // 2
+        self._left_eye = Eye(target, (x + radius, y), radius, screen)
+        x, y = self._head.rect.midright
+        self._right_eye = Eye(target, (x - radius, y), radius, screen)
+
+    def set_target(self, target):
+        x, y = self._head.rect.midleft
+        radius = (self._head.rect.centerx - x) // 2
+        self._left_eye.center = (x + radius, y)
+        x, y = self._head.rect.midright
+        self._right_eye.center = (x - radius, y)
+        self._left_eye.target = target
+        self._right_eye.target = target
+
+    def draw(self, screen, target):
+        self.set_target(target)
+        self._left_eye.draw(screen)
+        self._right_eye.draw(screen)
+
+
+class Snake(GameObject):
     def __init__(self, screen: pygame.Surface, index: int = 0, players: int = 1):
-        super(Snake, self).__init__((0, 0), (settings.block_size, settings.block_size),
-                                    settings.head_color)
+        super(Snake, self).__init__((0, 0), (settings.block_size, settings.block_size))
         self._index = index
         self._players = players
-        self._got_dir = True
+        self._got_dir = False
         self._dsq = False
         self._direction = DIR_UP
         self._speed = settings.snake_speed
@@ -39,6 +183,10 @@ class Snake(BlockObject):
         self._grid_width = width
         self._grid_height = height
         self._teleport = settings.teleport
+        self._head_image = ImageObject(self._pos, 'head.png')
+        self._body = ImageObject(self._pos, 'body.png')
+        self._move_index = 0
+        self._eyes = SnakeEyes(self._head_image, (0, 0), screen)
         self.set_starter_pos(screen)
         self.add(STARTER_SIZE - 1)
         self.draw(screen)
@@ -61,44 +209,52 @@ class Snake(BlockObject):
     def _max_y(self):
         return (self._grid_height - 1) * settings.snake_speed
 
+    @property
+    def _front_pos(self):
+        if self._direction == DIR_UP:
+            x, y = self.rect.midtop
+            return x, y
+        elif self._direction == DIR_RIGHT:
+            return self.rect.midright
+        elif self._direction == DIR_DOWN:
+            return self.rect.midbottom
+        return self.rect.midleft
+
     def _is_disqualified(self, screen: pygame.Surface, data_zone):
-        head = self.rect
         if self.is_touch(data_zone):
-            return True
-        top_left = head.topleft
-        top_right = head.topright
-        bottom_left = head.bottomleft
-        bottom_right = head.bottomright
+            return not self._teleport
         try:
-            dsq = False
-            for color in [settings.head_color, settings.body_color]:
-                dsq = dsq or color in [screen.get_at(top_left)[:-1], screen.get_at(top_right)[:-1],
-                                       screen.get_at(bottom_left)[:-1],
-                                       screen.get_at(bottom_right)[:-1]]
-            return dsq
+            color = screen.get_at(self._front_pos)[:-1]
+            return color != settings.background_color and color != settings.food_color
         except IndexError:
-            return True
+            return not self._teleport
 
     @property
     def _next_pos(self):
         x, y = self._pos
+        movement = self._speed / MOVEMENT_COUNTER
         if self._direction == DIR_UP:
-            y -= self._speed
+            y -= movement
         elif self._direction == DIR_DOWN:
-            y += self._speed
+            y += movement
         elif self._direction == DIR_RIGHT:
-            x += self._speed
+            x += movement
         else:
-            x -= self._speed
-        if self._teleport:
-            if x < 0:
-                x = (self._grid_width - 1) * settings.snake_speed
-            elif x > self._max_x:
-                x = 0
-            elif y < 0:
-                y = (self._grid_height - 1) * settings.snake_speed
-            elif y > self._max_y:
-                y = 0
+            x -= movement
+        if self._teleport and self._move_index == MOVEMENT_COUNTER - 1:
+            x, y = self._cal_teleport((x, y))
+        return round(x, 2), round(y, 2)
+
+    def _cal_teleport(self, pos):
+        x, y = pos
+        if x < 0:
+            x = (self._grid_width - 1) * settings.snake_speed
+        elif x > self._max_x:
+            x = 0
+        elif y < 0:
+            y = (self._grid_height - 1) * settings.snake_speed
+        elif y > self._max_y:
+            y = 0
         return x, y
 
     @property
@@ -109,40 +265,48 @@ class Snake(BlockObject):
     def dsq(self):
         return self._dsq
 
+    @property
+    def on_grid(self):
+        x, y = self._pos
+        if x % settings.snake_speed == 0 and y % settings.snake_speed == 0:
+            return True  #
+        return False
+
     def update(self, screen: pygame.Surface, food, data_zone):
-        self._got_dir = False
         self._queue.put(self._pos)
-        self._color = settings.body_color
-        self.draw(screen)
+        self._body.repos(self._pos)
+        self._body.draw(screen)
+        if self.on_grid:
+            if self._got_dir is not False:
+                self._direction = self._got_dir
+                self._got_dir = False
         self._pos = self._next_pos
         self.delete(screen)
         self._dsq = self._is_disqualified(screen, data_zone)
         self._check_food(food, screen)
-        self._color = settings.head_color
-        self.draw(screen)
+        self._head_image.repos(self._pos, HEAD_DIRECTIONS[self._direction])
+        self._head_image.draw(screen)
+        self._eyes.draw(screen, food.pos)
+        self._move_index = (self._move_index + 1) % MOVEMENT_COUNTER
         return self._dsq
 
     def delete(self, screen):
-        x, y = self._queue.get()
-        if not x < 0 or y < 0:
-            screen.fill(settings.background_color, pygame.Rect(x, y, self._size[0], self._size[1]))
+        x1, y1 = self._queue.get()
+        if not x1 < 0 or y1 < 0:
+            screen.fill(settings.background_color, pygame.Rect((x1, y1), (settings.block_size, settings.block_size)))
 
     def set_direction(self, button):
-        if not self._got_dir:
+        if self._got_dir is False:
             if button in P2_CVT_KEYS:
                 button = P2_CVT_KEYS[button]
             if button == pygame.K_UP and self._direction not in [DIR_UP, DIR_DOWN]:
-                self._direction = DIR_UP
-                self._got_dir = True
+                self._got_dir = DIR_UP
             elif button == pygame.K_DOWN and self._direction not in [DIR_UP, DIR_DOWN]:
-                self._direction = DIR_DOWN
-                self._got_dir = True
+                self._got_dir = DIR_DOWN
             elif button == pygame.K_RIGHT and self._direction not in [DIR_RIGHT, DIR_LEFT]:
-                self._direction = DIR_RIGHT
-                self._got_dir = True
+                self._got_dir = DIR_RIGHT
             elif button == pygame.K_LEFT and self._direction not in [DIR_RIGHT, DIR_LEFT]:
-                self._direction = DIR_LEFT
-                self._got_dir = True
+                self._got_dir = DIR_LEFT
 
     @property
     def optional_arrows(self):
@@ -151,6 +315,7 @@ class Snake(BlockObject):
         return [pygame.K_UP, pygame.K_DOWN]
 
     def add(self, value=1):
+        value *= MOVEMENT_COUNTER
         while value:
             self._queue.put((-100, -100))
             value -= 1
@@ -177,30 +342,29 @@ class BattleSnake(Snake):
         super(BattleSnake, self).__init__(screen, index, players)
         self._boundary_line = boundary_line
 
-    @property
-    def _next_pos(self):
-        x, y = self._pos
-        if self._direction == DIR_UP:
-            y -= self._speed
-        elif self._direction == DIR_DOWN:
-            y += self._speed
-        elif self._direction == DIR_RIGHT:
-            x += self._speed
-        else:
-            x -= self._speed
-        if self._teleport:
-            if x < 0:
-                x = self._boundary_line.left - settings.snake_speed
-            elif x > self._boundary_line.left - settings.snake_speed and self._index == 1:
-                x = 0
-            elif x < self._boundary_line.right and self.index == 0:
-                x = self._max_x
-            elif x > self._max_x:
-                x = self._boundary_line.right
-            elif y < 0:
-                y = (self._grid_height - 1) * settings.snake_speed
-            elif y > self._max_y:
-                y = 0
+    def _is_disqualified(self, screen: pygame.Surface, data_zone):
+        if self.is_touch(data_zone) or self._boundary_line.colliderect(self.rect):
+            return not self._teleport
+        try:
+            color = screen.get_at(self._front_pos)[:-1]
+            return color != settings.background_color and color != settings.food_color
+        except IndexError:
+            return not self._teleport
+
+    def _cal_teleport(self, pos):
+        x, y = pos
+        if x < 0:
+            x = self._boundary_line.left - settings.snake_speed - 1
+        elif x > self._boundary_line.left - settings.snake_speed and self._index == 1:
+            x = 0
+        elif x < self._boundary_line.right and self.index == 0:
+            x = self._max_x
+        elif x > self._max_x:
+            x = self._boundary_line.right + 1
+        elif y < 0:
+            y = (self._grid_height - 1) * settings.snake_speed
+        elif y > self._max_y:
+            y = 0
         return x, y
 
 
@@ -671,6 +835,7 @@ def snake_battle(screen, running, temp_msgs):
             if data_zone.timer > BATTLE_TIMER * settings.refresh_rate:
                 break
             data_zone.draw(screen)
+            pygame.draw.rect(screen, settings.body_color, line_rect)
             pygame.display.flip()
             clock.tick(settings.refresh_rate)
         if esc_pressed:
