@@ -29,6 +29,12 @@ class GameObject:
     def delete(self, screen):
         screen.fill(settings.background_color, self.rect)
 
+    def is_touch_mouse(self):
+        x1, y1 = pygame.mouse.get_pos()
+        width1, height1 = 1, 1
+        mouse_rect = pygame.Rect(x1, y1, width1, height1)
+        return mouse_rect.colliderect(self.rect)
+
 
 class BlockObject(GameObject):
     def __init__(self, pos: POSITION, size: POSITION, color):
@@ -40,15 +46,26 @@ class BlockObject(GameObject):
 
 
 class ImageObject(GameObject):
-    def __init__(self, pos, img_name, direction=0, color_key=WHITE):
-        self._image = pygame.image.load(img_name).convert()
-        self._image.set_colorkey(color_key)
-        w, h = self._image.get_size()
-        new_w = int(w / 19 * settings.block_size)
-        new_h = int(w / 19 * settings.block_size)
-        self._image = pygame.transform.scale(self._image, (new_w, new_h))
+    def __init__(self, pos, img, direction=0, color_key=WHITE, resize=True):
+        self._image = pygame.image.load(img) if type(img) == str else img
+        if color_key:
+            self._image.set_colorkey(color_key)
+        if resize:
+            w, h = self._image.get_size()
+            new_w = int(w / DEFAULT_BLOCK_SIZE * settings.block_size)
+            new_h = int(w / DEFAULT_BLOCK_SIZE * settings.block_size)
+            self._image = pygame.transform.scale(self._image, (new_w, new_h))
         super(ImageObject, self).__init__(pos, self._image.get_size())
         self._direction = direction
+
+    @property
+    def size(self):
+        return self._image.get_size()
+
+    @size.setter
+    def size(self, size):
+        self._image = pygame.transform.scale(self._image, size)
+        self._size = self._image.get_size()
 
     @property
     def _display_image(self):
@@ -57,38 +74,76 @@ class ImageObject(GameObject):
     def draw(self, screen):
         screen.blit(self._display_image, self._pos)
 
+    def to_bytes(self):
+        image = pygame.transform.scale(self._image, (DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_SIZE))
+        return pygame.surfarray.array3d(image)
+
     def repos(self, pos, direction=None):
         self._pos = pos
         if direction is not None:
             self._direction = direction
 
 
-class GifObject(GameObject):
-    def __init__(self, pos, folder, direction=0):
-        self._images = []
-        images = sorted([img for img in os.listdir(folder)], key=lambda f: int(f[:f.index('.')]))
-        size = settings.delta_size
-        for image in images:
-            image = pygame.image.load(fr'{folder}\{image}')
-            width, height = image.get_size()
-            self._images.append(pygame.transform.scale(image, (int(width * size), int(height * size))))
-        self._index = 0
-        self._direction = direction
-        super(GifObject, self).__init__(pos, self._images[0].get_size())
+class ImageEditor(ImageObject):
+    def __init__(self, pos, image: pygame.Surface, paint_bar: PaintBar):
+        super(ImageEditor, self).__init__(pos, image, color_key=None, resize=False)
+        self._paint_bar = paint_bar
+        w, h = self.size
+        self.size = w * 2, h * 2
+
+    def is_touch_mouse(self):
+        x1, y1 = pygame.mouse.get_pos()
+        width1, height1 = 1, 1
+        mouse_rect = pygame.Rect(x1, y1, width1, height1)
+        return mouse_rect.colliderect(self.rect) or self._paint_bar.mouse_rect.colliderect(self.rect)
 
     @property
-    def _display_image(self):
-        img = pygame.transform.rotate(self._images[self._index], self._direction)
-        self._index = (self._index + 1) % len(self._images)
-        return img
+    def mouse_rect(self):
+        x1, y1, w1, h1 = self._paint_bar.mouse_rect
+        x2, y2 = self.rect.topleft
+        return pygame.Rect(x1-x2, y1-y2, w1, h1)
 
-    def draw(self, screen):
-        screen.blit(self._display_image, self._pos)
+    def active(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.is_touch_mouse():
+                    pygame.draw.rect(self._image, self._paint_bar.selected_color, self.mouse_rect)
+            # elif event.type == pygame.KEYDOWN:
+            #     if event.key == pygame.K_b:
+            #         w, h = self.size
+            #         self.size = w*2, h*2
+            #     elif event.key == pygame.K_n:
+            #         w, h = self.size
+            #         self.size = w//2, h//2
+            #     print(self.size)
 
-    def repos(self, pos, direction=None):
-        self._pos = pos
-        if direction is not None:
-            self._direction = direction
+
+# class GifObject(GameObject):
+#     def __init__(self, pos, folder, direction=0):
+#         self._images = []
+#         images = sorted([img for img in os.listdir(folder)], key=lambda f: int(f[:f.index('.')]))
+#         size = settings.delta_size
+#         for image in images:
+#             image = pygame.image.load(fr'{folder}\{image}')
+#             width, height = image.get_size()
+#             self._images.append(pygame.transform.scale(image, (int(width * size), int(height * size))))
+#         self._index = 0
+#         self._direction = direction
+#         super(GifObject, self).__init__(pos, self._images[0].get_size())
+#
+#     @property
+#     def _display_image(self):
+#         img = pygame.transform.rotate(self._images[self._index], self._direction)
+#         self._index = (self._index + 1) % len(self._images)
+#         return img
+#
+#     def draw(self, screen):
+#         screen.blit(self._display_image, self._pos)
+#
+#     def repos(self, pos, direction=None):
+#         self._pos = pos
+#         if direction is not None:
+#             self._direction = direction
 
 
 class Eye:
@@ -101,9 +156,7 @@ class Eye:
 
     @property
     def distance(self):
-        x1, y1 = self._center
-        x2, y2 = self._target
-        return ((x2-x1)**2 + (y1-y2)**2) ** 0.5
+        return distance(self._center, self._target)
 
     @property
     def _eye_radius(self):
@@ -163,10 +216,10 @@ class SnakeEyes:
 
 
 class SnakeBody(ImageObject):
-    def __init__(self, head: ImageObject):
+    def __init__(self, head: ImageObject, index):
         self._head = head
         self._queue = Queue()
-        super(SnakeBody, self).__init__((-100, -100), BODY_IMAGE)
+        super(SnakeBody, self).__init__((-100, -100), settings.body1_image if index == 0 else settings.body2_image)
 
     def draw(self, screen):
         screen.blit(self._image, self._pos)
@@ -208,9 +261,9 @@ class Snake(GameObject):
         self._grid_height = height
         self._teleport = settings.teleport
         self.set_starter_pos(screen)
-        self._head = ImageObject(self._pos, HEAD_IMAGE)
+        self._head = ImageObject(self._pos, settings.head1_image if self._index == 0 else settings.head2_image)
         self._eyes = SnakeEyes(self._head, (0, 0), screen)
-        self._body = SnakeBody(self._head)
+        self._body = SnakeBody(self._head, self._index)
         self._volume = data.volume
         self.add(STARTER_SIZE - 1)
         self.draw(screen)
@@ -520,7 +573,7 @@ class BattleFood(Food):
 
 class Obstacle(BlockObject):
     def __init__(self, snake: Snake, data_zone: BlockObject, screen: pygame.Surface):
-        super(Obstacle, self).__init__((0, 0), (settings.block_size, settings.block_size), settings.body_color)
+        super(Obstacle, self).__init__((0, 0), (settings.block_size, settings.block_size), RED)
         self._direction = 0
         self._under_me = None
         self._snake_pointer = snake
@@ -682,12 +735,6 @@ class DataZone(BlockObject):
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     self._pause = not self._pause
-
-    def is_touch_mouse(self):
-        x1, y1 = pygame.mouse.get_pos()
-        width1, height1 = 1, 1
-        mouse_rect = pygame.Rect(x1, y1, width1, height1)
-        return mouse_rect.colliderect(self.rect)
 
     def reset(self, screen):
         self._pause = True
@@ -859,7 +906,7 @@ def snake_battle(screen: pygame.Surface, data: DataManager):
                 update_game(screen, data_zone, snakes, foods)
                 if data_zone.timer > BATTLE_TIMER * settings.refresh_rate:
                     raise UserDsq
-                pygame.draw.rect(screen, settings.body_color, line_rect)
+                pygame.draw.rect(screen, RED, line_rect)
                 draw_game(screen, data, data_zone)
         except UserDsq:
             winner_index = 1 + max(snakes, key=lambda s: (not s.dsq, len(s))).index
@@ -910,7 +957,7 @@ def snake_survival_battle(screen: pygame.Surface, data: DataManager):
             while True:
                 check_game_events(data, data_zone, snakes)
                 update_game(screen, data_zone, snakes, foods)
-                pygame.draw.rect(screen, settings.body_color, line_rect)
+                pygame.draw.rect(screen, RED, line_rect)
                 draw_game(screen, data, data_zone)
         except UserDsq:
             winner_index = 1 + max(snakes, key=lambda s: (not s.dsq, len(s))).index
@@ -962,9 +1009,16 @@ def pick_gameplay(screen, data: DataManager):
         data.delete(screen)
 
 
-def submit_settings(conf_bars, conf_colors, teleport_button):
+def submit_settings(conf_bars, conf_colors, teleport_button, image_obj: List[ImageObject]):
     with open(SETTING_FILE, 'wb+') as my_file:
         lst = [bar.real_value for bar in conf_bars]
+        if image_obj:
+            lst += [img.to_bytes() for img in image_obj]
+        else:
+            lst += [pygame.surfarray.array3d(settings.head1_image),
+                    pygame.surfarray.array3d(settings.head2_image),
+                    pygame.surfarray.array3d(settings.body1_image),
+                    pygame.surfarray.array3d(settings.body2_image)]
         lst += [color.real_value for color in conf_colors]
         lst += [teleport_button.real_value]
         my_file.write(pickle.dumps(lst))
@@ -980,16 +1034,58 @@ def check_settings(conf_bars, conf_colors, teleport_button, data):
     return True
 
 
-def edit_settings(screen, data):
+def edit_skin(screen: pygame.Surface, data: DataManager) -> List[ImageObject]:
+    pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.block_size * 2.5))
+    paint_bar = PaintBar(next(pos))
+    x, y = next(pos)
+    snake2_pos = next_pos((x + settings.block_size * 2.5, y), (0, settings.block_size * 2.5))
+    image_editors = [ImageEditor((x, y), settings.head1_image, paint_bar),
+                     ImageEditor(next(snake2_pos), settings.head2_image, paint_bar),
+                     ImageEditor(next(pos), settings.body1_image, paint_bar),
+                     ImageEditor(next(snake2_pos), settings.body2_image, paint_bar)]
+    save_button = Button(next(pos), 'save changes!', YELLOW, '', settings.text_size, data)
+    reset_button = Button(next(pos), 'reset', RED, '', settings.text_size, data)
+    while data.running:
+        events = pygame.event.get()
+        paint_bar.active(events)
+        for image in image_editors:
+            image.active(events)
+        for event in events:
+            if event.type == pygame.QUIT:
+                data.running = False
+                raise QuitPressed
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    raise EscPressed
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == MOUSE_LEFT:
+                    if save_button.is_touch_mouse():
+                        return image_editors
+                    elif reset_button.is_touch_mouse():
+                        return [ImageObject((x, y), HEAD_IMAGE, color_key=None, resize=False),
+                                ImageObject(next(snake2_pos), HEAD_IMAGE, color_key=None, resize=False),
+                                ImageObject(next(pos), BODY_IMAGE, color_key=None, resize=False),
+                                ImageObject(next(snake2_pos), BODY_IMAGE, color_key=None, resize=False)]
+        save_button.draw(screen)
+        reset_button.draw(screen)
+        for image in image_editors:
+            image.draw(screen)
+        paint_bar.draw(screen)
+        pygame.display.flip()
+        clock.tick(LOBBY_REFRESH_RATE)
+        data.delete(screen)
+
+
+def edit_settings(screen: pygame.Surface, data: DataManager):
     bar_length = (1080 - 480) // 5
     pos = next_pos((100 * settings.delta_size, 100 * settings.delta_size), (0, settings.text_size * 2))
     conf_bars = [ScaleBar(next(pos), 'resolution', bar_length, data, settings.resolution, 480, 1080),
                  ScaleBar(next(pos), 'block size', bar_length, data, settings.base_block_size, 2, 50),
                  ScaleBar(next(pos), 'game speed', bar_length, data, settings.refresh_rate, 1, 50),
                  ScaleBar(next(pos), 'text size', bar_length, data, settings.base_text_size, 10, 40)]
-    conf_colors = [ColorSelector(next(pos), 'head color', settings.head_color, settings.text_size, data),
-                   ColorSelector(next(pos), 'body color', settings.body_color, settings.text_size, data),
-                   ColorSelector(next(pos), 'background color', settings.background_color, settings.text_size, data,
+    buttons = {Button(next(pos), 'edit skin', RED, '', settings.text_size, data): edit_skin}
+    image_obj: List[ImageObject] = []
+    conf_colors = [ColorSelector(next(pos), 'background color', settings.background_color, settings.text_size, data,
                                  allow_black=True),
                    ColorSelector(next(pos), 'food color', settings.food_color, settings.text_size, data)]
     teleport_button = SelectionButton(next(pos), 'teleport', settings.teleport, settings.text_size, data)
@@ -1013,7 +1109,7 @@ def edit_settings(screen, data):
                         teleport_button.change_mode()
                     elif submit_button.is_touch_mouse():
                         if check_settings(conf_bars, conf_colors, teleport_button, data):
-                            submit_settings(conf_bars, conf_colors, teleport_button)
+                            submit_settings(conf_bars, conf_colors, teleport_button, image_obj)
                             raise SettingsChanged
                     elif reset_button.is_touch_mouse():
                         try:
@@ -1027,6 +1123,12 @@ def edit_settings(screen, data):
                             if color.is_touch_mouse():
                                 color.change_color()
                                 break
+                        for button in buttons:
+                            if button.is_touch_mouse():
+                                try:
+                                    image_obj = buttons[button](screen, data)
+                                except EscPressed:
+                                    pass
                 elif event.button == MOUSE_RIGHT:
                     for color in conf_colors:
                         if color.is_touch_mouse():
@@ -1034,6 +1136,8 @@ def edit_settings(screen, data):
                             break
         for bar in conf_bars:
             bar.draw(screen)
+        for button in buttons:
+            button.draw(screen)
         for color in conf_colors:
             color.draw(screen)
         teleport_button.draw(screen)

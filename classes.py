@@ -25,8 +25,8 @@ class Settings:
         self._base_block_size = None
         self._refresh_rate = None
         self._base_text_size = None
-        self._head_color = None
-        self._body_color = None
+        self._head1_image = self._head2_image = None
+        self._body1_image = self._body2_image = None
         self._bg_color = None
         self._food_color = None
         self._teleport = None
@@ -79,12 +79,20 @@ class Settings:
         return int(self.delta_size * self._base_text_size)
 
     @property
-    def head_color(self):
-        return self._head_color
+    def head1_image(self):
+        return pygame.surfarray.make_surface(self._head1_image)
 
     @property
-    def body_color(self):
-        return self._body_color
+    def head2_image(self):
+        return pygame.surfarray.make_surface(self._head2_image)
+
+    @property
+    def body1_image(self):
+        return pygame.surfarray.make_surface(self._body1_image)
+
+    @property
+    def body2_image(self):
+        return pygame.surfarray.make_surface(self._body2_image)
 
     @property
     def background_color(self):
@@ -105,20 +113,38 @@ class Settings:
     def reset(self):
         try:
             with open(SETTING_FILE, 'rb') as my_file:
-                content = pickle.loads(my_file.read())
-            self._resolution, self._base_block_size, self._refresh_rate, self._base_text_size, self._head_color,\
-                self._body_color, self._bg_color, self._food_color, self._teleport = content
-            self._has_change = True
-        except (FileNotFoundError, ValueError):
-            self._resolution: int = 480
-            self._base_block_size: int = 19
-            self._refresh_rate: int = 15
+                content = iter(pickle.loads(my_file.read()))
+            self._resolution = next(content)
+            self._base_block_size = next(content)
+            self._refresh_rate = next(content)
+            self._base_text_size = next(content)
+            self._head1_image = next(content)
+            if self._head1_image is None:
+                self._head1_image = self._head1_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
+            self._head2_image = next(content)
+            if self._head2_image is None:
+                self._head2_image = self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
+            self._body1_image = next(content)
+            if self._body1_image is None:
+                self._body1_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
+            self._body2_image = next(content)
+            if self._body2_image is None:
+                self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
+            self._bg_color = next(content)
+            self._food_color = next(content)
+            self._teleport = next(content)
+        except (FileNotFoundError, ValueError, EOFError):
+            self._resolution: int = 710
+            self._base_block_size: int = 29
+            self._refresh_rate: int = 30
             self._base_text_size: int = 20
-            self._head_color = ORANGE
-            self._body_color = RED
+            self._head1_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
+            self._head2_image = pygame.surfarray.array3d(pygame.image.load(HEAD_IMAGE))
+            self._body1_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
+            self._body2_image = pygame.surfarray.array3d(pygame.image.load(BODY_IMAGE))
             self._bg_color = BLACK
             self._food_color = YELLOW
-            self._teleport = False
+            self._teleport = True
         self._has_change = True
 
     @property
@@ -126,6 +152,10 @@ class Settings:
         change = self._has_change
         self._has_change = False
         return change
+
+    @property
+    def pixel_ratio(self):
+        return self.block_size/DEFAULT_BLOCK_SIZE
 
 
 class DataManager:
@@ -704,7 +734,7 @@ class ScaleBar:
 
     @property
     def real_value(self):
-        return int(self._min_value + self.value * (self._max_value - self._min_value))
+        return round(self._min_value + self.value * (self._max_value - self._min_value))
 
     @real_value.setter
     def real_value(self, value):
@@ -924,6 +954,58 @@ class ColorSelector(Message):
     @property
     def real_value(self):
         return self.color
+
+
+class PaintBar:
+    def __init__(self, pos):
+        self._rects = []
+        self._pos = pos
+        self._radius = settings.text_size // 2
+        self._pos_gen = next_pos(self._pos, (self._radius * 4, 0))
+        self._selected_color = COLORS[0]
+        self._size_index = 0
+        for color in COLORS:
+            self._rects.append((pygame.Rect(self.next_pos, (self._radius, self._radius)), color))
+
+    @property
+    def next_pos(self):
+        return next(self._pos_gen)
+
+    @property
+    def selected_color(self):
+        return self._selected_color
+
+    def is_touch_mouse(self):
+        mouse = pygame.mouse.get_pos()
+        mouse_rect = pygame.Rect(mouse, (1, 1))
+        for rect, color in self._rects:
+            if mouse_rect.colliderect(rect):
+                return rect, color
+        return None, None
+
+    def active(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                rect, color = self.is_touch_mouse()
+                if rect:
+                    self._selected_color = color
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    self._size_index = (self._size_index + 1) % 20
+                elif event.key == pygame.K_DOWN:
+                    self._size_index = (self._size_index - 1) % 20
+
+    @property
+    def mouse_rect(self):
+        rect_size = settings.pixel_ratio * (self._size_index + 1)
+        mouse_rect = pygame.Rect(pygame.mouse.get_pos() + (rect_size, rect_size))
+        mouse_rect.bottomright = pygame.mouse.get_pos()
+        return mouse_rect
+
+    def draw(self, screen):
+        for rect, color in self._rects:
+            pygame.draw.circle(screen, color, rect.center, self._radius)
+        pygame.draw.rect(screen, self.selected_color, self.mouse_rect)
 
 
 def distance(obj1, obj2) -> float:
