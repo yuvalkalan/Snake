@@ -69,6 +69,7 @@ class SnakeBody(ImageObject):
         self._queue = Queue()
         super(SnakeBody, self).__init__((-100, -100), settings.body1_image if index == 0 else settings.body2_image,
                                         settings.snake_size)
+        self.add(STARTER_SIZE - 1)
 
     def draw(self, screen):
         screen.blit(self._image, self._pos)
@@ -79,17 +80,17 @@ class SnakeBody(ImageObject):
 
     def add(self, value=1):
         value *= MOVEMENT_COUNTER
-        while value:
+        for _ in range(value):
             self._queue.put((-100, -100))
-            value -= 1
 
     def repos(self, *_):
-        self._queue.put(self._pos)
         self._pos = self._head.pos
+        self._queue.put(self._pos)
 
     def reset(self):
         self._queue = Queue()
         self._pos = (-100, -100)
+        self.add(STARTER_SIZE - 1)
 
     def __len__(self):
         return self._queue.qsize() // MOVEMENT_COUNTER
@@ -115,7 +116,6 @@ class Snake(ScreenObject):
         self._eyes = SnakeEyes(self._head, (0, 0), screen)
         self._body = SnakeBody(self._head, self._index)
         self._volume = data.volume
-        self.add(STARTER_SIZE - 1)
         self.draw(screen)
 
     def set_starter_pos(self, screen):
@@ -137,23 +137,28 @@ class Snake(ScreenObject):
         return (self._grid_height - 1) * settings.snake_speed
 
     @property
-    def _front_pos(self):
+    def _front_line(self):
+        length = self._size[0]
         if self._direction == DIR_UP:
-            return self.rect.midtop
+            x, y = self.rect.topleft
+            return [(x + i, y) for i in range(length)]
         elif self._direction == DIR_RIGHT:
-            x, y = self.rect.midright
-            return x-1, y
+            x, y = self.rect.topright
+            return [(x - 1, y + i) for i in range(length)]
         elif self._direction == DIR_DOWN:
-            x, y = self.rect.midbottom
-            return x, y-1
-        return self.rect.midleft
+            x, y = self.rect.bottomleft
+            return [(x + i, y-1) for i in range(length)]
+        x, y = self.rect.topleft
+        return [(x, y + i) for i in range(length)]
 
     def _is_disqualified(self, screen: pygame.Surface, data_zone):
         if self.is_touch(data_zone):
             return not self._teleport
         try:
-            color = screen.get_at(self._front_pos)[:-1]
-            return color != settings.background_color and color != settings.food_color
+            for pos in self._front_line:
+                if screen.get_at(pos)[:-1] != settings.background_color:
+                    return True
+            return False
         except IndexError:
             return not self._teleport
 
@@ -215,24 +220,20 @@ class Snake(ScreenObject):
         channel.play(pygame.mixer.Sound(EAT_SOUND))
 
     def update(self, screen: pygame.Surface, food, data_zone):
-        self._head.repos(self._pos)
-        self._body.repos()
-        self._body.draw(screen)
         if self.on_grid:
             if self._got_dir is not False:
                 self._direction = self._got_dir
                 self._got_dir = False
         self._pos = self._next_pos
-        self.delete(screen)
-        self._dsq = self._is_disqualified(screen, data_zone)
-        self._check_food(food, screen)
+        if not self._check_food(food, screen):
+            self._dsq = self._is_disqualified(screen, data_zone)
+        self._body.repos()
+        self._body.delete(screen)
         self._head.repos(self._pos, HEAD_DIRECTIONS[self._direction])
+        self._body.draw(screen)
         self._head.draw(screen)
         self._eyes.draw(screen, food.pos)
         return self._dsq
-
-    def delete(self, screen):
-        self._body.delete(screen)
 
     def set_direction(self, button):
         last_dir = self._got_dir
@@ -265,6 +266,7 @@ class Snake(ScreenObject):
             food.replace(screen)
             self._play_eat()
             self.add(1)
+        return check
 
     def __len__(self):
         return len(self._body) + 1
@@ -272,8 +274,8 @@ class Snake(ScreenObject):
     def reset(self, screen):
         self.set_starter_pos(screen)
         self._direction = DIR_UP
+        self._head.repos(self._pos)
         self._body.reset()
-        self.add(STARTER_SIZE - 1)
         self.draw(screen)
 
 
@@ -283,13 +285,9 @@ class BattleSnake(Snake):
         self._boundary_line = boundary_line
 
     def _is_disqualified(self, screen: pygame.Surface, data_zone):
-        if self.is_touch(data_zone) or self._boundary_line.colliderect(self.rect):
+        if self._boundary_line.colliderect(self.rect):
             return not self._teleport
-        try:
-            color = screen.get_at(self._front_pos)[:-1]
-            return color != settings.background_color and color != settings.food_color
-        except IndexError:
-            return not self._teleport
+        return super(BattleSnake, self)._is_disqualified(screen, data_zone)
 
     def _cal_teleport(self, pos):
         x, y = pos
@@ -327,6 +325,7 @@ class SurvivalSnake(Snake):
             food.replace(screen)
             self._play_eat()
             self._timer -= self._timer_delta
+        return check
 
 
 class SurvivalBattleSnake(BattleSnake):
@@ -353,3 +352,4 @@ class SurvivalBattleSnake(BattleSnake):
             food.replace(screen)
             self._play_eat()
             self._timer -= self._timer_delta
+        return check

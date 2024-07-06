@@ -9,6 +9,7 @@ class Obstacle(GameBlock):
         self._under_me = None
         self._snake_pointer = snake
         self._speed = settings.obstacle_speed // MOVEMENT_COUNTER
+        self._super_mode = False
         self.start(screen, data_zone)
 
     def reset_pos(self, screen: pygame.Surface, data_zone):
@@ -30,6 +31,8 @@ class Obstacle(GameBlock):
         while self._is_dead(screen, data_zone):
             self.reset_pos(screen, data_zone)
         self.redirect()
+        self._super_mode = False
+        self._color = RED
 
     def redirect(self):
         x, y = self._pos
@@ -52,8 +55,12 @@ class Obstacle(GameBlock):
     def check_food(self, screen, food: Food):
         if self.is_touch(food):
             food.replace(screen)
+            self._super_mode = True
+            self._color = PURPLE
 
     def update(self, screen, food, data_zone):
+        if self._super_mode:
+            self.redirect()
         self.delete(screen)
         x, y = self._pos
         x -= math.cos(self._direction) * self._speed

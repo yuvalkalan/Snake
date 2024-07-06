@@ -15,12 +15,14 @@ class VolumeBar(ImageObject):
                                         position_at=BOTTOMRIGHT)
         self._title = [Clicker(self._pos, img) for img in VOLUME_IMAGES]
         x, y = self.rect.midtop
+        dot_img_distance = 10 * settings.delta_size
 
-        self._dot = (x, int(y - 10 * settings.delta_size))
+        self._dot = (x, int(y - dot_img_distance))
 
         _, y = screen_grids(screen)
         y = int(y - y * DATA_ZONE_SIZE) * settings.snake_speed
-        self._line_rect = pygame.Rect(self._dot, (settings.scale_bar_width, self.rect.top - y))
+        line_height = self.rect.top - y - dot_img_distance - settings.dot_radius
+        self._line_rect = pygame.Rect(self._dot, (settings.scale_bar_width, line_height))
         self._line_rect.midbottom = self._line_rect.midtop
 
         self._mouse_down = False

@@ -1,5 +1,6 @@
 from font import *
 from .constants import *
+import queue
 
 
 class PaintColor(CircleObject):
@@ -203,30 +204,41 @@ class ImageEditor(ImageObject):
         x2, y2 = self.rect.topleft
         return pygame.Rect(x1-x2, y1-y2, w1, h1)
 
-    def _flood_rec(self, pos, src_color, dst_color):
-        x, y = pos
-        if not (0 <= x < self.rect.width and 0 <= y < self.rect.height):
-            return
-        color = self._image.get_at((x, y))[:-1]
-        if color == src_color:
-            self._image.set_at((x, y), dst_color)
-            self._flood_rec((x + 1, y), src_color, dst_color)
-            self._flood_rec((x, y + 1), src_color, dst_color)
-            self._flood_rec((x - 1, y), src_color, dst_color)
-            self._flood_rec((x, y - 1), src_color, dst_color)
-
     def _fill_color(self):
         mouse_pos = self.mouse_rect.topleft
         src_color = self._image.get_at(self.mouse_rect.topleft)[:-1]
         dst_color = self._paint_bar.selected_color
         if src_color == dst_color:
             return
-        finish = False
-        while not finish:
+        q = queue.Queue()
+        q.put(mouse_pos)
+        been_at = set()
+        while not q.empty():
+            x, y = q.get()
+            if (x, y) in been_at:
+                continue
+            else:
+                been_at.add((x, y))
+            self._image.set_at((x, y), dst_color)
             try:
-                self._flood_rec(mouse_pos, src_color, dst_color)
-                finish = True
-            except RecursionError:
+                if self._image.get_at((x + 1, y))[:-1] == src_color:
+                    q.put((x + 1, y))
+            except IndexError:
+                pass
+            try:
+                if self._image.get_at((x - 1, y))[:-1] == src_color:
+                    q.put((x - 1, y))
+            except IndexError:
+                pass
+            try:
+                if self._image.get_at((x, y + 1))[:-1] == src_color:
+                    q.put((x, y + 1))
+            except IndexError:
+                pass
+            try:
+                if self._image.get_at((x, y - 1))[:-1] == src_color:
+                    q.put((x, y - 1))
+            except IndexError:
                 pass
 
     def active(self, events):
