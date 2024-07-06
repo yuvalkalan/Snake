@@ -35,6 +35,10 @@ SETTING_FILE = r'settings.txt'
 
 VOLUME_IMAGES: List[str] = [r'files\buttons\volume0.png', r'files\buttons\volume1.png', r'files\buttons\volume2.png',
                             r'files\buttons\volume3.png']
+PAINT_PENCIL_IMAGE = r'files\buttons\pencil.png'
+PAINT_FILL_IMAGE = r'files\buttons\fill.png'
+PAINT_SELECT_IMAGE = r'files\buttons\select.png'
+
 BACKGROUND_IMG = r'files\animation\lobby.png'
 HEAD_IMAGE = r'files\animation\head.png'
 BODY_IMAGE = r'files\animation\body.png'
@@ -94,3 +98,8 @@ TEMP_MSG_EXIST_TIMER = 4
 
 BASE_OBSTACLE_SPEED = 20
 DEFAULT_BLOCK_SIZE = 19
+
+PAINT_PENCIL = 0
+PAINT_SELECT = 1
+PAINT_FILL = 2
+PAINT_MODES = [PAINT_PENCIL, PAINT_SELECT, PAINT_FILL]

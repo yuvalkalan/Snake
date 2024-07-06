@@ -654,12 +654,13 @@ class Clicker:
         :param pos: מיקום הכפתור על המסך
         :param center: האם המיקום הוא עבור מרכז ההודעה או עבור הפינה השמאלית עליונה
         """
-        if size == -1:
-            size = settings.delta_size
         self._image = pygame.image.load(image)
         self._image.set_colorkey(WHITE)
+        if size == -1:
+            size = settings.delta_size
         new_size = int(self._image.get_rect().width * size), int(self._image.get_rect().height * size)
-        self._image = pygame.transform.scale(self._image, new_size)
+        if size != 0:
+            self._image = pygame.transform.scale(self._image, new_size)
         self._rect = pygame.Rect(pos, self._image.get_rect().size)
         if center:
             self._rect.center = pos
@@ -685,6 +686,9 @@ class Clicker:
     @pos.setter
     def pos(self, pos: POSITION):
         self._rect.topleft = pos
+
+    def draw_select(self, screen):
+        pygame.draw.rect(screen, RED, self._rect, 5)
 
 
 class GIF:
@@ -759,7 +763,7 @@ class ScaleBar:
         """
         self._title = Button(pos, title, RED, '', settings.text_size, data)
         x, y = self._rect.midright
-        self._dot: Tuple[float, float] = (x + 10, y)
+        self._dot = (x + 10, y)
         self._max_value = max_value
         self._min_value = min_value
         self._line_rect = pygame.Rect(self._dot, (length, settings.scale_bar_width))
@@ -849,6 +853,11 @@ class ScaleBar:
         elif self.value > 1:
             self.value = 1
         return started_value != self.value
+
+    def rect_is_touch_mouse(self):
+        mouse = pygame.mouse.get_pos()
+        mouse_rect = pygame.Rect(mouse, (5, 5))
+        return self.is_touch_mouse() or mouse_rect.colliderect(self._rect)
 
 
 class VolumeBar:
