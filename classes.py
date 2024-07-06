@@ -1,9 +1,10 @@
 import math
-import pygame
-import os  # שימוש: עבודה עם קבצים
+import pickle
+import os
 from constants import *
 
 pygame.font.init()
+pygame.mixer.init()
 
 
 def singleton(cls):
@@ -20,18 +21,17 @@ def singleton(cls):
 @singleton
 class Settings:
     def __init__(self):
-        try:
-            my_file = open(SETTING_FILE, 'r')
-            content = my_file.read().split('\n')
-            res, block_size, speed, text_size = int(content[0]), int(content[1]), int(content[2]), int(content[3])
-            my_file.close()
-        except (FileNotFoundError, ValueError):
-            res, block_size, speed, text_size = 480, 19, 15, 20
-        self._resolution: int = res
-        self._base_block_size: int = block_size
-        self._refresh_rate: int = speed
-        self._base_text_size: int = text_size
-        self._has_change = False
+        self._resolution = None
+        self._base_block_size = None
+        self._refresh_rate = None
+        self._base_text_size = None
+        self._head_color = None
+        self._body_color = None
+        self._bg_color = None
+        self._food_color = None
+        self._teleport = None
+        self._has_change = None
+        self.reset()
 
     @property
     def resolution(self):
@@ -77,18 +77,42 @@ class Settings:
     def text_size(self):
         return int(self.delta_size * self._base_text_size)
 
+    @property
+    def head_color(self):
+        return self._head_color
+
+    @property
+    def body_color(self):
+        return self._body_color
+
+    @property
+    def background_color(self):
+        return self._bg_color
+
+    @property
+    def food_color(self):
+        return self._food_color
+
+    @property
+    def teleport(self):
+        return self._teleport
+
     def reset(self):
         try:
-            my_file = open(SETTING_FILE, 'r')
-            content = my_file.read().split('\n')
-            res, block_size, speed, text_size = int(content[0]), int(content[1]), int(content[2]), int(content[3])
-            my_file.close()
+            with open(SETTING_FILE, 'rb') as my_file:
+                content = pickle.loads(my_file.read())
+            self._resolution, self._base_block_size, self._refresh_rate, self._base_text_size, self._head_color, self._body_color, self._bg_color, self._food_color, self._teleport = content
+            self._has_change = True
         except (FileNotFoundError, ValueError):
-            res, block_size, speed, text_size = 480, 19, 15, 20
-        self._resolution: int = res
-        self._base_block_size: int = block_size
-        self._refresh_rate: int = speed
-        self._base_text_size: int = text_size
+            self._resolution: int = 480
+            self._base_block_size: int = 19
+            self._refresh_rate: int = 15
+            self._base_text_size: int = 20
+            self._head_color = ORANGE
+            self._body_color = RED
+            self._bg_color = BLACK
+            self._food_color = YELLOW
+            self._teleport = False
         self._has_change = True
 
     @property
@@ -99,6 +123,7 @@ class Settings:
 
 
 settings = Settings()
+clock = pygame.time.Clock()
 
 
 class Message:
@@ -292,68 +317,93 @@ class LoadingMessage(DataMessage):
             screen.blit(self._text_surf, self._rect.topleft)
 
 
-# class TempMsg(Message):
-#     """
-#     המחלקה האחראית על הצגת הודעות זמניות
-#     """
-#
-#     def __init__(self, text: str, color: COLOR = WHITE, play_error_sound: bool = True, volume: int = 1):
-#         """
-#         הפעולה הבונה
-#         :param text: ראה במחלקת האב
-#         :param color: הצבע ההתחלתי של ההודעה
-#         :param play_error_sound: האם להפעיל סאונד של שגיאה או לא
-#         :param volume: עוצמת הווליום של סאונד השגיאה (מספר בין 0 ל-1)
-#         """
-#         super(TempMsg, self).__init__(SCREEN_CENTER, text, 20, color, CENTER)
-#         # if play_error_sound:
-#         #     channel = pygame.mixer.Channel(TEMP_MSG_CHANNEL)
-#         #     channel.set_volume(volume)
-#         #     channel.play(pygame.mixer.Sound(ERROR_SOUND))
-#         self._existence_time = 4
-#         self._time_counter = self._existence_time * settings.refresh_rate
-#
-#     def draw(self, screen: pygame.Surface, pos=None, reverse=False) -> bool:
-#         """
-#         מצייר את ההודעה אל המסך
-#         :param screen: אובייקט המסך
-#         :param pos: מיקום לצייר בו את ההודעה
-#         :param reverse: האם לצייר את ההודעה עם דהייה לבהיר או לכהה
-#         :return: True - אם זמן ההודעה פג וצריך להוריד אותה
-#                  False - אחרת
-#         """
-#         self._time_counter -= 1
-#         self.fade_in() if reverse else self.fade_out()
-#         screen.blit(self._text_surf, pos) if pos else screen.blit(self._text_surf, self.current_pos)
-#         if self._time_counter == 0:
-#             return True
-#         return False
-#
-#     def fade_out(self) -> NoReturn:
-#         """
-#         משנה את הצבע של ההודעה לבהיר יותר
-#         :return: None
-#         """
-#         color = [int(self._time_counter / settings.refresh_rate / self._existence_time * item) for item in self._color]
-#         self._text_surf = self._text_font.render(self._text, True, color)
-#
-#     def fade_in(self) -> NoReturn:
-#         """
-#         משנה את הצבע של ההודעה לכהה יותר
-#         :return: None
-#         """
-#         color = [255 - int(self._time_counter / settings.refresh_rate / self._existence_time * item) for item in self._color]
-#         self._text_surf = self._text_font.render(self._text, True, color)
-#
-#     @property
-#     def current_pos(self) -> POSITION:
-#         """
-#         מחזיר את המיקום החדש של ההודעה
-#         :return: מיקום חדש
-#         """
-#         x, y = self._rect.topleft
-#         y = int(self._rect.centery * self._time_counter / settings.refresh_rate / self._existence_time)
-#         return x, y
+class TempMsg(Message):
+    """
+    המחלקה האחראית על הצגת הודעות זמניות
+    """
+
+    def __init__(self, text: str, color: COLOR = WHITE, play_error_sound: bool = True, volume: int = 1):
+        """
+        הפעולה הבונה
+        :param text: ראה במחלקת האב
+        :param color: הצבע ההתחלתי של ההודעה
+        :param play_error_sound: האם להפעיל סאונד של שגיאה או לא
+        :param volume: עוצמת הווליום של סאונד השגיאה (מספר בין 0 ל-1)
+        """
+        super(TempMsg, self).__init__((0, 0), text, settings.text_size, color, CENTER)
+        if play_error_sound:
+            channel = pygame.mixer.Channel(TEMP_MSG_CHANNEL)
+            channel.set_volume(volume)
+            channel.play(pygame.mixer.Sound(ERROR_SOUND))
+        self._existence_time = 4
+        self._rate = LOBBY_REFRESH_RATE
+        self._time_counter = self._existence_time * self._rate
+
+    def draw(self, screen: pygame.Surface, pos=None, reverse=False) -> bool:
+        """
+        מצייר את ההודעה אל המסך
+        :param screen: אובייקט המסך
+        :param pos: מיקום לצייר בו את ההודעה
+        :param reverse: האם לצייר את ההודעה עם דהייה לבהיר או לכהה
+        :return: True - אם זמן ההודעה פג וצריך להוריד אותה
+                 False - אחרת
+        """
+        self._time_counter -= 1
+        self.fade_in() if reverse else self.fade_out()
+        screen.blit(self._text_surf, pos) if pos else screen.blit(self._text_surf, self.current_pos)
+        if self._time_counter == 0:
+            return True
+        return False
+
+    def fade_out(self) -> NoReturn:
+        """
+        משנה את הצבע של ההודעה לבהיר יותר
+        :return: None
+        """
+        color = [int(self._time_counter / self._rate / self._existence_time * item) for item in self._color]
+        self._text_surf = self._text_font.render(self._text, True, color)
+
+    def fade_in(self) -> NoReturn:
+        """
+        משנה את הצבע של ההודעה לכהה יותר
+        :return: None
+        """
+        color = [255 - int(self._time_counter / self._rate / self._existence_time * item) for item in self._color]
+        self._text_surf = self._text_font.render(self._text, True, color)
+
+    @property
+    def current_pos(self) -> POSITION:
+        """
+        מחזיר את המיקום החדש של ההודעה
+        :return: מיקום חדש
+        """
+        x, y = self._rect.topleft
+        y = int(self._rect.centery * self._time_counter / self._rate / self._existence_time)
+        return x, y
+
+
+class TempMsgList:
+    def __init__(self, screen: pygame.Surface):
+        self._lst = []
+        self._screen_pointer = screen
+
+    def __iadd__(self, other: TempMsg):
+        other.pos = self._screen_pointer.get_rect().center
+        self._lst.append(other)
+        return self
+
+    def draw(self, reverse: bool = False):
+        """
+        מעדכן את ההודעות הזמניות
+        :param reverse: האם לצייר על צבע שחור או לבן
+        :return: None
+        """
+        to_remove = [msg for msg in self._lst if msg.draw(self._screen_pointer, reverse=reverse)]
+        for msg in to_remove:
+            self._lst.remove(msg)
+
+    def empty(self):
+        self._lst = []
 
 
 class Button:
@@ -795,6 +845,10 @@ class SelectionButton(Message):
         self._mode = not self._mode
         self.color = GREEN if self._mode else RED
 
+    @property
+    def real_value(self):
+        return self._mode
+
 
 class ColorSelector(Message):
     def __init__(self, pos: POSITION, text: str, color: COLOR, size: int, position_at: str = TOPLEFT,
@@ -816,6 +870,10 @@ class ColorSelector(Message):
             self._color_index = (self._color_index + delta) % len(COLORS)
         self.color = COLORS[self._color_index]
 
+    @property
+    def real_value(self):
+        return self.color
+
 
 def distance(obj1, obj2) -> float:
     """
@@ -833,19 +891,6 @@ def distance(obj1, obj2) -> float:
     else:
         raise ValueError
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
-
-
-# def update_temp_msgs(temp_msgs: List[TempMsg], screen: pygame.Surface, reverse: bool = False) -> NoReturn:
-#     """
-#     מעדכן את ההודעות הזמניות
-#     :param temp_msgs: רשימת הודעות זמניות
-#     :param screen: אובייקט המסך
-#     :param reverse: האם לצייר על צבע שחור או לבן
-#     :return: None
-#     """
-#     to_remove = [msg for msg in temp_msgs if msg.draw(screen, reverse=reverse)]
-#     for msg in to_remove:
-#         temp_msgs.remove(msg)
 
 
 def next_pos(start_pos: POSITION, change: POSITION):

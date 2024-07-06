@@ -1,5 +1,6 @@
 from typing import *
 
+import pygame
 
 COLOR = Tuple[int, int, int]
 POSITION = Tuple[int, int]
@@ -29,8 +30,8 @@ SHIFTED_SPECIAL_CHARS: Dict[int, str] = {39: '"', 44: '<', 45: '_', 46: '>', 47:
 
 TITLE_FONT: str = r'files\fonts\title_font.ttf'
 TEXT_FONT: str = r'files\fonts\text_font.ttf'
-SETTING_FILE = 'settings.txt'
-
+SETTING_FILE = r'settings.txt'
+BACKGROUND_IMG = r'files\lobby.png'
 
 TOPLEFT: str = 'topleft'
 CENTER: str = 'center'
@@ -44,7 +45,7 @@ MOUSE_RIGHT: int = 3
 MOUSE_SCROLL_UP: int = 4
 MOUSE_SCROLL_DOWN: int = 5
 
-VOLUME_POS: POSITION = (955, 370)
+#VOLUME_POS: POSITION = (955, 370)
 VOLUME_IMAGES: List[str] = [r'files\buttons\volume0.png', r'files\buttons\volume1.png', r'files\buttons\volume2.png',
                             r'files\buttons\volume3.png']
 
@@ -59,9 +60,17 @@ RESOLUTION_RATIO: float = 9/16
 BASE_RESOLUTION = 720
 
 STARTER_SIZE: int = 4
-TELEPORT = True
-HEAD_COLOR = ORANGE
-BODY_COLOR = RED
-BACKGROUND_COLOR = BLACK
 
 DATA_ZONE_SIZE: float = 0.2
+
+ERROR_SOUND = r'files\error.ogg'
+TEMP_MSG_CHANNEL = 0
+
+LOBBY_REFRESH_RATE = 30
+
+P2_CVT_KEYS = {pygame.K_w: pygame.K_UP,
+               pygame.K_s: pygame.K_DOWN,
+               pygame.K_d: pygame.K_RIGHT,
+               pygame.K_a: pygame.K_LEFT}
+
+BATTLE_TIMER = 60
